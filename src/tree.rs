@@ -1,146 +1,74 @@
-use std::collections::BTreeMap;
+use std::cmp::Ordering;
 
-// #[derive(Clone)]
-pub struct Leaf {
-    index: usize,
-    value: f64,
-}
-
-// #[derive(Clone)]
-pub struct Internal {
-    index: usize,
-    split_idx: usize,
-    split_value: f64,
-}
-
-// A node may be either: a Leaf or Internal node
-// #[derive(Clone)]
-pub enum Node {
-    Leaf(Leaf),
-    Internal(Internal),
-}
-
-// #[derive(Clone)]
-// #[derive(Debug)]
-pub struct Tree {
-    nodes: BTreeMap<usize, Node>,
-}
-
+/// A `DecisionTree` structure is implemented as a number of parallel
+/// vectors. The i-th element of each vector holds information about
+/// node `i`. Node 0 is the tree's root. Some of the arrays only apply
+/// to either leaves or split nodes. In this case, the values of the
+/// nodes of the other type is arbitrary. For example, `feature` and
+/// `threshold` vectors only apply to split nodes. The values for leaf
+/// nodes in these arrays are therefore arbitrary. Among the arrays,
+/// we have:
+/// - `feature`: Stores the feature index for splitting at the i'th node.
+/// - `threshold`: Stores the threshold value for the i'th node split.
+/// - `children_left`: Store indices of the left child for the i'th node.
+/// - `children_right`: Stores indices of the right child for the i'th node
+/// - `value`: Stores output value for the i'th node
+///
+/// # Examples
+///
+/// ```
+/// let mut treee = DecisionTree::new();
+/// ```
 #[derive(Debug)]
-pub enum TreeError {
-    NotLeaf(usize),
-    NotInternal(usize),
-    IndexNotFound(usize),
+pub struct DecisionTree {
+    feature: Vec<usize>,
+    threshold: Vec<f64>,
+    children_left: Vec<i32>,
+    children_right: Vec<i32>,
+    value: Vec<Vec<f64>>,
 }
 
-impl Leaf {
-    // Create a new leaf node
-    pub fn new(index: usize, value: f64) -> Self {
-        Leaf { index, value }
-    }
-
-    pub fn value(&self) -> f64 {
-        self.value
-    }
-}
-
-impl Internal {
-    // Creates a new internal node
-    pub fn new(index: usize, split_idx: usize, value: f64) -> Self {
-        Internal {
-            index,
-            split_idx,
-            split_value: value,
+impl DecisionTree {
+    pub fn new() -> Self {
+        DecisionTree {
+            feature: Vec::new(),
+            threshold: Vec::new(),
+            children_left: Vec::new(),
+            children_right: Vec::new(),
+            value: Vec::new(),
         }
     }
 
-    // Get index of left child for this node
-    fn left(&self) -> usize {
-        self.index * 2 + 1
+    pub fn add_node(&mut self, feature: usize, threshold: f64, value: Vec<f64>) -> usize {
+        let node_id = self.feature.len();
+        self.feature.push(feature);
+        self.threshold.push(threshold);
+        self.children_left.push(-1);
+        self.children_right.push(-1);
+        self.value.push(value);
+        node_id
     }
 
-    // Get index of right child for this node
-    fn right(&self) -> usize {
-        self.index * 2 + 2
-    }
-}
-
-impl Node {
-    // Create a new internal node
-    pub fn internal(index: usize, split_idx: usize, split_value: f64) -> Self {
-        Node::Internal(Internal::new(index, split_idx, split_value))
-    }
-
-    // Create a new leaf node
-    pub fn leaf(index: usize, value: f64) -> Self {
-        Node::Leaf(Leaf::new(index, value))
-    }
-
-    fn as_internal(&self) -> Result<&Internal, TreeError> {
-        match self {
-            Node::Internal(n) => Ok(n),
-            Node::Leaf(n) => Err(TreeError::NotInternal(n.index)),
+    pub fn set_child(&mut self, parent: usize, is_left: bool, child: usize) {
+        if is_left {
+            self.children_left[parent] = child as i32;
+        } else {
+            self.children_right[parent] = child as i32;
         }
     }
 
-    fn index(&self) -> usize {
-        match self {
-            Node::Internal(n) => n.index,
-            Node::Leaf(n) => n.index,
+    pub fn predict(&self, sample: &[f64]) -> &[f64] {
+        let mut node = 0;
+        loop {
+            if self.children_left[node] == -1 && self.children_right[node] == -1 {
+                return &self.value[node]
+            }
+            let feature = self.feature[node];
+            let threshold = self.threshold[node];
+            node = match sample[feature].partial_cmp(&threshold).unwrap() {
+                Ordering::Less => self.children_left[node] as usize,
+                _ => self.children_right[node] as usize,
+            };
         }
-    }
-
-    pub fn depth(&self) -> usize {
-        ((self.index() + 1) as f64).log2().floor() as usize
-    }
-}
-
-impl Tree {
-    // Create a Tree with a single root node
-    pub fn new(root_value: f64) -> Self {
-        let root = Node::Leaf(Leaf::new(0, root_value));
-        let nodes = BTreeMap::from_iter([(0, root)]);
-        Tree { nodes }
-    }
-
-    pub fn root(&self) -> &Node{
-        self.nodes.get(&0).expect("The tree should always have a root node at index 0.")
-    }
-
-    pub fn get_node(&self, idx: &usize) -> Result<&Node, TreeError> {
-        self.nodes.get(idx).ok_or(TreeError::IndexNotFound(*idx))
-    }
-
-    // pub fn check_leaf
-
-    pub fn add_node(&mut self, node: Node) -> &Self {
-        let idx = node.index();
-        self.nodes.insert(idx, node);
-
-        self
-    }
-
-    // pub fn update_leaf_node(&mut self, idx: usize, value: f64) -> Result<(), TreeError> {}
-
-    pub fn split_leaf_node(
-        &mut self,
-        idx: usize,
-        split_idx: usize,
-        split_value: f64,
-        left_value: f64,
-        right_value: f64
-    ) -> Result<(usize, usize), TreeError> {
-        // self.check_leaf(idx)?;
-
-        // Create the new parent
-        let new = Internal::new(idx, split_idx, split_value);
-        let (left_idx, right_idx) = (new.left(), new.right());
-
-        // Set the new Internal and Leaf nodes
-        self.add_node(Node::Internal(new));
-        self.add_node(Node::leaf(left_idx, left_value));
-        self.add_node(Node::leaf(right_idx, right_value));
-
-        Ok((left_idx, right_idx))
     }
 }

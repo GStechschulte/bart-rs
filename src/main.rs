@@ -1,72 +1,58 @@
 use std::collections::BTreeMap;
-// use rand::prelude::*;
-//
-use bart_rs::tree::{Node, Tree};
+use std::cmp::Ordering;
 
+use bart_rs::tree::DecisionTree;
 
-// #[derive(Debug, Clone)]
-// struct DecisionTree {
-//     leaf: Vec<f64>,     // Contains the values in the leaves
-//     var: Vec<usize>,    // Contains the axes along which the decision nodes operate
-//     split: Vec<f64>     // Contains the decision boundaries
-// }
-
-// impl DecisionTree {
-//     fn new(max_depth: usize, num_features: usize) -> Self {
-//         let num_nodes = 2usize.pow(max_depth as u32) - 1;
-//         let num_leaves = 2usize.pow(max_depth as u32);
-
-//         DecisionTree {
-//             leaf: vec![0.0; num_leaves],
-//             var: vec![0; num_nodes / 2],
-//             split: vec![0.0; num_nodes / 2]
-//         }
-//     }
-
-//     fn left_child(i: usize) -> usize {2 * i}
-
-//     fn right_child(i: usize) -> usize {2 * i + 1}
-
-//     fn is_leaf(&self, i: usize) -> bool {self.split[i] == 0.0}
-// }
-
-// #[derive(Debug)]
-// struct ParticleGibbsSampler {
-//     trees: Vec<DecisionTree>,
-//     weights: Vec<f64>
-// }
-
-// impl ParticleGibbsSampler {
-//     fn new(num_particles: usize, max_depth: usize, num_features: usize) -> Self {
-//         // let mut rng = thread_rng();
-//         let trees = (0..num_particles)
-//             .map(|_| DecisionTree::new(max_depth, num_features))
-//             .collect();
-//         let weights = vec![1.0 / num_particles as f64; num_particles];
-
-//         ParticleGibbsSampler { trees, weights }
-//     }
-
-//     // Systematic resample of all but first Particle
-//     fn resample(&mut self) {
-//         let mut rng = thread_rng();
-//         let mut new_trees: Vec<DecisionTree> = Vec::with_capacity(self.trees.len());
-//     }
-// }
 
 fn main() {
+    // Create a regression decision tree
+    let mut tree = DecisionTree::new();
 
-    let tree = Tree::new(10.);
-    // println!("{:#?}", tree);
+    // Build the tree (house size in sq ft, number of bedrooms)
+    let root = tree.add_node(0, 1500.0, vec![200000.0]); // Split on house size
+
+    // Left subtree (smaller houses)
+    let left = tree.add_node(1, 2.0, vec![150000.0]); // Split on number of bedrooms
+    let left_left = tree.add_node(0, 0.0, vec![120000.0]); // Leaf node
+    let left_right = tree.add_node(0, 0.0, vec![180000.0]); // Leaf node
+
+    // Right subtree (larger houses)
+    let right = tree.add_node(1, 3.0, vec![300000.0]); // Split on number of bedrooms
+    let right_left = tree.add_node(0, 0.0, vec![250000.0]); // Leaf node
+    let right_right = tree.add_node(0, 0.0, vec![350000.0]); // Leaf node
+
+    // Set up the tree structure
+    tree.set_child(root, true, left);
+    tree.set_child(root, false, right);
+    tree.set_child(left, true, left_left);
+    tree.set_child(left, false, left_right);
+    tree.set_child(right, true, right_left);
+    tree.set_child(right, false, right_right);
+
+    println!("{:?}", tree);
+
+    // Test cases
+    let test_cases = vec![
+        (vec![1200.0, 2.0], "small house, 2 bedrooms"),
+        (vec![1800.0, 2.0], "large house, 2 bedrooms"),
+        (vec![1400.0, 3.0], "small house, 3 bedrooms"),
+        (vec![2000.0, 4.0], "large house, 4 bedrooms"),
+    ];
+
+    // Make predictions
+    for (sample, description) in test_cases {
+        let prediction = tree.predict(&sample);
+        println!("Prediction for {} (size: {} sq ft, {} bedrooms): ${:.2}",
+                 description, sample[0], sample[1], prediction[0]);
+    }
 
     let mut voc: BTreeMap<usize, f64> = BTreeMap::new();
     voc.insert(1, 10.);
     voc.insert(2, 50.);
     voc.insert(3, 25.);
 
-    println!("{:#?}", voc);
-    voc.split_off(&2);
-    println!("{:#?}", voc);
+    // println!("{:#?}", voc);
+    // println!("{:#?}", voc);
 
     // let dt = DecisionTree::new(1, 5);
     // println!("{:?}", dt);
