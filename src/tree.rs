@@ -10,8 +10,6 @@ use std::cmp::Ordering;
 /// we have:
 /// - `feature`: Stores the feature index for splitting at the i'th node.
 /// - `threshold`: Stores the threshold value for the i'th node split.
-/// - `children_left`: Store indices of the left child for the i'th node.
-/// - `children_right`: Stores indices of the right child for the i'th node
 /// - `value`: Stores output value for the i'th node
 ///
 /// # Examples
@@ -21,11 +19,14 @@ use std::cmp::Ordering;
 /// ```
 #[derive(Debug)]
 pub struct DecisionTree {
-    feature: Vec<usize>,
-    threshold: Vec<f64>,
-    children_left: Vec<i32>,
-    children_right: Vec<i32>,
-    value: Vec<Vec<f64>>,
+    pub feature: Vec<usize>,
+    pub threshold: Vec<f64>,
+    pub value: Vec<f64>,
+}
+
+// TODO: Implement
+enum TreeError {
+    NotLeaf(usize)
 }
 
 impl DecisionTree {
@@ -33,41 +34,82 @@ impl DecisionTree {
         DecisionTree {
             feature: Vec::new(),
             threshold: Vec::new(),
-            children_left: Vec::new(),
-            children_right: Vec::new(),
             value: Vec::new(),
         }
     }
 
-    pub fn add_node(&mut self, feature: usize, threshold: f64, value: Vec<f64>) -> usize {
+    pub fn add_node(&mut self, feature: usize, threshold: f64, value: f64) -> usize {
         let node_id = self.feature.len();
         self.feature.push(feature);
         self.threshold.push(threshold);
-        self.children_left.push(-1);
-        self.children_right.push(-1);
         self.value.push(value);
         node_id
     }
 
-    pub fn set_child(&mut self, parent: usize, is_left: bool, child: usize) {
-        if is_left {
-            self.children_left[parent] = child as i32;
+    pub fn left_child(&self, index: usize) -> Option<usize> {
+        let left_index = index * 2 + 1;
+        if left_index < self.feature.len() {
+            Some(left_index)
         } else {
-            self.children_right[parent] = child as i32;
+            None
         }
     }
 
-    pub fn predict(&self, sample: &[f64]) -> &[f64] {
+    pub fn right_child(&self, index: usize) -> Option<usize> {
+        let right_index = index * 2 + 2;
+        if right_index < self.feature.len() {
+            Some(right_index)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_leaf(&self, index: usize) -> bool {
+        self.left_child(index).is_none() && self.right_child(index).is_none()
+    }
+
+    pub fn split_node(
+        &mut self,
+        node_index: usize,
+        feature: usize,
+        threshold: f64,
+        left_value: f64,
+        right_value: f64) {
+
+        if self.is_leaf(node_index) {
+            let left_child_index = node_index * 2 + 1;
+            let right_child_index = node_index * 2 + 2;
+
+            // Update the current node
+            self.feature[node_index] = feature;
+            self.threshold[node_index] = threshold;
+
+            // Add left child
+            self.feature.insert(left_child_index, 0); // Placeholder feature
+            self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
+            self.value.insert(left_child_index, left_value);
+
+            // Add right child
+            self.feature.insert(right_child_index, 0); // Placeholder feature
+            self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
+            self.value.insert(right_child_index, right_value);
+        } else {
+            // TODO: Error enum
+            println!("Cannot split on non-leaf node.")
+        }
+    }
+
+    pub fn predict(&self, sample: &[f64]) -> f64 {
         let mut node = 0;
         loop {
-            if self.children_left[node] == -1 && self.children_right[node] == -1 {
-                return &self.value[node]
+            if self.is_leaf(node) {
+                return self.value[node];
             }
             let feature = self.feature[node];
             let threshold = self.threshold[node];
             node = match sample[feature].partial_cmp(&threshold).unwrap() {
-                Ordering::Less => self.children_left[node] as usize,
-                _ => self.children_right[node] as usize,
+                Ordering::Less => self.left_child(node).unwrap(),
+                _ => self.right_child(node).unwrap(),
             };
         }
     }
