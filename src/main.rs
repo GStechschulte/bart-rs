@@ -1,31 +1,33 @@
-use std::collections::BTreeMap;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
-use bart_rs::tree::DecisionTree;
-
+use bart_rs::{particle::ParticleGibbsSampler, tree::DecisionTree};
 
 fn main() {
+    let sampler = ParticleGibbsSampler::new(10, 5);
+    println!("{:?}", sampler);
+
     // Create a regression decision tree
-    let mut tree = DecisionTree::new();
+    // let mut tree = DecisionTree::new();
 
     // Build the tree (house size in sq ft, number of bedrooms)
-    let root = tree.add_node(0, 1500.0, 200000.0); // Split on house size
+    // let root = tree.add_node(0, 1500.0, 200000.0); // Split on house size
 
-    println!("Initial tree  : {:?}", tree);
-    println!("Is leaf node? : {}", tree.is_leaf(root));
+    // println!("Initial tree  : {:?}", tree);
+    // println!("Is leaf node? : {}", tree.is_leaf(root));
 
-    println!("Feature length: {:?}", tree.feature.len());
+    // println!("Feature length: {:?}", tree.feature.len());
 
-    tree.split_node(root, 0, 1500.0, 150000.0, 250000.0);
+    // tree.split_node(root, 0, 1500.0, 150000.0, 250000.0);
 
-    println!("Tree after split: {:?}", tree);
+    // println!("Tree after split: {:?}", tree);
 
-    println!("Split value of root node: {:?}", tree.threshold[root]);
+    // println!("Split value of root node: {:?}", tree.threshold[root]);
 
-    println!("Leaf values: {:?}", tree.value);
+    // println!("Leaf values: {:?}", tree.value);
 
-    let idx = tree.threshold.into_iter().position(|x| x == 0.0);
-    println!("{:?}", idx);
+    // let idx = tree.threshold.into_iter().position(|x| x == 0.0);
+    // println!("{:?}", idx);
 
     // Set up the tree structure
     // tree.set_child(root, true, left);

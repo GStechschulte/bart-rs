@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 /// vectors. The i-th element of each vector holds information about
 /// node `i`. Node 0 is the tree's root. Some of the arrays only apply
 /// to either leaves or split nodes. In this case, the values of the
-/// nodes of the other type is arbitrary. For example, `feature` and
+/// nodes of the other vector is arbitrary. For example, `feature` and
 /// `threshold` vectors only apply to split nodes. The values for leaf
 /// nodes in these arrays are therefore arbitrary. Among the arrays,
 /// we have:
@@ -26,7 +26,7 @@ pub struct DecisionTree {
 
 // TODO: Implement
 enum TreeError {
-    NotLeaf(usize)
+    NotLeaf(usize),
 }
 
 impl DecisionTree {
@@ -68,15 +68,25 @@ impl DecisionTree {
         self.left_child(index).is_none() && self.right_child(index).is_none()
     }
 
+    pub fn node_depth(&self, index: usize) -> usize {
+        if index == 0 {
+            0
+        } else {
+            let parent_index = (index - 1) / 2;
+            1 + self.node_depth(parent_index)
+        }
+    }
+
     pub fn split_node(
         &mut self,
         node_index: usize,
         feature: usize,
         threshold: f64,
         left_value: f64,
-        right_value: f64) {
-
+        right_value: f64,
+    ) -> (usize, usize) {
         if self.is_leaf(node_index) {
+            // TODO: We should be using the `add_node` method here
             let left_child_index = node_index * 2 + 1;
             let right_child_index = node_index * 2 + 2;
 
@@ -93,9 +103,11 @@ impl DecisionTree {
             self.feature.insert(right_child_index, 0); // Placeholder feature
             self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
             self.value.insert(right_child_index, right_value);
+
+            (left_child_index, right_child_index)
         } else {
             // TODO: Error enum
-            println!("Cannot split on non-leaf node.")
+            panic!("Cannot split a non-leaf node");
         }
     }
 
