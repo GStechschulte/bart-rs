@@ -1,0 +1,15 @@
+[package]
+name = "bart_rs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bart_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.21.2", features = [
+    "extension-module",
+    "auto-initialize",
+] }
+numpy = { version = "0.21.0" }
