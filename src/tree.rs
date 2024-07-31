@@ -1,13 +1,17 @@
 use std::cmp::Ordering;
 
 /// A `DecisionTree` structure is implemented as a number of parallel
-/// vectors. The i-th element of each vector holds information about
+/// vectors. Using parallel vectors allows for a more cache-efficient
+/// implementation. Moreover, index accessing allows one to avoid borrow
+/// checker issues related to recursive binary tree implementations.
+///
+/// The i-th element of each vector holds information about
 /// node `i`. Node 0 is the tree's root. Some of the arrays only apply
 /// to either leaves or split nodes. In this case, the values of the
 /// nodes of the other vector is arbitrary. For example, `feature` and
 /// `threshold` vectors only apply to split nodes. The values for leaf
-/// nodes in these arrays are therefore arbitrary. Among the arrays,
-/// we have:
+/// nodes in these arrays are therefore arbitrary. Among the arrays, we
+/// have:
 /// - `feature`: Stores the feature index for splitting at the i'th node.
 /// - `threshold`: Stores the threshold value for the i'th node split.
 /// - `value`: Stores output value for the i'th node
@@ -66,6 +70,17 @@ impl DecisionTree {
 
     pub fn is_leaf(&self, index: usize) -> bool {
         self.left_child(index).is_none() && self.right_child(index).is_none()
+    }
+
+    // Leaf nodes do not have a threshold value
+    pub fn get_leaf_nodes(&self) -> Vec<usize> {
+        let mut leaf_nodes = Vec::new();
+        for (index, threshold) in self.threshold.iter().enumerate() {
+            if *threshold == 0.0 {
+                leaf_nodes.push(index);
+            }
+        }
+        leaf_nodes
     }
 
     pub fn node_depth(&self, index: usize) -> usize {

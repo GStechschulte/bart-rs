@@ -20,4 +20,7 @@ fn test_tree_primitives() {
 
     // Test leaf value
     assert_eq!(tree.value.last(), Some(&2000.0));
+
+    // Test leaf nodes
+    assert_eq!(tree.get_leaf_nodes(), vec![1, 2]);
 }

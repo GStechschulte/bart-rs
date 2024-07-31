@@ -3,5 +3,12 @@ name = "bart-rs"
 version = "0.1.0"
 edition = "2021"
 
+# [lib]
+# name = "bart-rs"
+# crate-type = ["lib"]
+
 [dependencies]
+ndarray = { version = "0.15.6", default-features = true }
+numpy = { version = "0.21.0" }
 rand = "0.8.5"
+rand_distr = "0.4.3"

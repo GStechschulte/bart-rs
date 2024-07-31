@@ -1,56 +1,48 @@
+use bart_rs::data::Matrix;
+use ndarray::{array, Array2};
+use numpy::PyArray;
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use bart_rs::{particle::ParticleGibbsSampler, tree::DecisionTree};
+use bart_rs::tree::DecisionTree;
+
+#[derive(Debug)]
+struct Indices {
+    leaf_nodes: HashSet<usize>,
+    expansion_nodes: VecDeque<usize>,
+    data_indices: HashMap<usize, Vec<usize>>,
+}
 
 fn main() {
-    let sampler = ParticleGibbsSampler::new(10, 5);
-    println!("{:?}", sampler);
+    // let sampler = ParticleGibbsSampler::new(10, 5);
+    // println!("{:?}", sampler);
+
+    let a2 = array![[1, 2], [3, 4]];
+
+    let matrix = vec![
+        vec![1.0, 2.0, 3.0],
+        vec![4.0, 5.0, 6.0],
+        vec![7.0, 8.0, 9.0],
+    ];
+
+    println!("{:?}", matrix);
 
     // Create a regression decision tree
-    // let mut tree = DecisionTree::new();
+    let mut tree = DecisionTree::new();
 
-    // Build the tree (house size in sq ft, number of bedrooms)
-    // let root = tree.add_node(0, 1500.0, 200000.0); // Split on house size
+    let mut tree = DecisionTree::new();
+    let root = tree.add_node(0, 1500.0, 200000.0);
 
-    // println!("Initial tree  : {:?}", tree);
-    // println!("Is leaf node? : {}", tree.is_leaf(root));
+    let mut rng = rand::thread_rng();
+    println!("{:?}", rng);
 
-    // println!("Feature length: {:?}", tree.feature.len());
+    let n_points = 10 as usize;
+    let n: Vec<usize> = Vec::from_iter(0..n_points);
+    let indices = Indices {
+        leaf_nodes: HashSet::from([0]),
+        expansion_nodes: VecDeque::from([0]),
+        data_indices: HashMap::from([(0, n)]),
+    };
 
-    // tree.split_node(root, 0, 1500.0, 150000.0, 250000.0);
-
-    // println!("Tree after split: {:?}", tree);
-
-    // println!("Split value of root node: {:?}", tree.threshold[root]);
-
-    // println!("Leaf values: {:?}", tree.value);
-
-    // let idx = tree.threshold.into_iter().position(|x| x == 0.0);
-    // println!("{:?}", idx);
-
-    // Set up the tree structure
-    // tree.set_child(root, true, left);
-    // tree.set_child(root, false, right);
-    // tree.set_child(left, true, left_left);
-    // tree.set_child(left, false, left_right);
-    // tree.set_child(right, true, right_left);
-    // tree.set_child(right, false, right_right);
-
-    // println!("{:?}", tree);
-
-    // Test cases
-    // let test_cases = vec![
-    //     (vec![1200.0, 2.0], "small house, 2 bedrooms"),
-    //     (vec![1800.0, 2.0], "large house, 2 bedrooms"),
-    //     (vec![1400.0, 3.0], "small house, 3 bedrooms"),
-    //     (vec![2000.0, 4.0], "large house, 4 bedrooms"),
-    // ];
-
-    // Make predictions
-    // for (sample, description) in test_cases {
-    //     let prediction = tree.predict(&sample);
-    //     println!("Prediction for {} (size: {} sq ft, {} bedrooms): ${:.2}",
-    //              description, sample[0], sample[1], prediction[0]);
-    // }
+    println!("{:?}", indices);
 }

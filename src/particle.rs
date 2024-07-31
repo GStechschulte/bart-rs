@@ -3,7 +3,7 @@ use std::f64::consts::PI;
 
 use rand::{thread_rng, Rng};
 
-use crate::math::{self, Matrix};
+use crate::data::Matrix;
 
 use crate::{sampler::PgBartState, tree::DecisionTree};
 
@@ -29,10 +29,26 @@ impl Particle {
     }
 
     // Attempt to grow this particle
-    fn grow(&mut self, X: &[Vec<f64>], y: &[f64], prior: f64) {
-        let mut rng = thread_rng();
+    fn grow(&mut self, X: &Matrix<f64>, prior: f64, state: &PgBartState) -> bool {
+        // 1.) Identify leaf nodes eligible to expand..
+        let leaf_nodes = self.tree.get_leaf_nodes();
 
-        // Identify leaf nodes eligible to expand..
+        for leaf_node in leaf_nodes {
+            // 2.) Compute probability that this leaf node will remain a leaf node
+            //     and stochastically decide whether or not to grow
+            let depth = self.tree.node_depth(leaf_node);
+            let expand = state.probabilities.sample_expand_flag(depth);
+            if expand {
+                let feature = state.probabilities.sample_feature();
+                // Get the observed data points that were routed to this leaf_node
+                // because we need them in order to sample a threshold (split value)
+                // let feature_values = X.select_rows(rows, &feature);
+            }
+        }
+
+        // Get the observations that belong to this leaf node
+
+        return true;
     }
 }
 
