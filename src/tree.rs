@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 /// to either leaves or split nodes. In this case, the values of the
 /// nodes of the other vector is arbitrary. For example, `feature` and
 /// `threshold` vectors only apply to split nodes. The values for leaf
-/// nodes in these arrays are therefore arbitrary. Among the arrays, we
+/// nodes in these arrays are therefore arbitrary. Among the vectors, we
 /// have:
 /// - `feature`: Stores the feature index for splitting at the i'th node.
 /// - `threshold`: Stores the threshold value for the i'th node split.

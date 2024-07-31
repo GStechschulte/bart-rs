@@ -1,6 +1,5 @@
-use bart_rs::data::Matrix;
 use ndarray::{array, Array2};
-use numpy::PyArray;
+// use numpy::PyArray;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
@@ -26,12 +25,6 @@ fn main() {
     ];
 
     println!("{:?}", matrix);
-
-    // Create a regression decision tree
-    let mut tree = DecisionTree::new();
-
-    let mut tree = DecisionTree::new();
-    let root = tree.add_node(0, 1500.0, 200000.0);
 
     let mut rng = rand::thread_rng();
     println!("{:?}", rng);
