@@ -1,4 +1,4 @@
-use bart_rs::tree::DecisionTree;
+use pg_bart::tree::DecisionTree;
 
 #[test]
 fn test_tree_primitives() {

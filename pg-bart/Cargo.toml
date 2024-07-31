@@ -1,11 +1,7 @@
 [package]
-name = "bart-rs"
+name = "pg-bart"
 version = "0.1.0"
 edition = "2021"
-
-# [lib]
-# name = "bart-rs"
-# crate-type = ["lib"]
 
 [dependencies]
 ndarray = { version = "0.15.6", default-features = true }

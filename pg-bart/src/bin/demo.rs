@@ -3,7 +3,7 @@ use ndarray::{array, Array2};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use bart_rs::tree::DecisionTree;
+use pg_bart::tree::DecisionTree;
 
 #[derive(Debug)]
 struct Indices {

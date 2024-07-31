@@ -1,5 +1,4 @@
-use bart_rs::particle::Particle;
-use bart_rs::tree::DecisionTree;
+use pg_bart::particle::Particle;
 
 #[test]
 fn test_particle_primitives() {
