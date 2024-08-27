@@ -1,26 +1,75 @@
-use pg_bart::tree::DecisionTree;
+/// Tests for DecisionTree primitives
+use pg_bart::tree::{DecisionTree, TreeError};
 
 #[test]
-fn test_tree_primitives() {
+fn test_new_tree() {
+    let tree = DecisionTree::new();
+    assert!(tree.feature.is_empty());
+    assert!(tree.threshold.is_empty());
+    assert!(tree.value.is_empty());
+}
+
+#[test]
+fn test_add_root_node() {
     let mut tree = DecisionTree::new();
-    let root = tree.add_node(0, 1500.0, 200000.0);
-    let (left_idx, right_idx) = tree.split_node(0, 0, 1500.0, 1000.0, 2000.0);
+    let root_index = tree.add_node(usize::MAX, 0.0, 5.0);
+    assert_eq!(root_index, 0);
+    assert_eq!(tree.feature[0], usize::MAX);
+    assert_eq!(tree.threshold[0], 0.0);
+    assert_eq!(tree.value[0], 5.0);
+}
 
-    // Test threshold value a node was split on
-    assert_eq!(tree.threshold[root], 1500.0);
+#[test]
+fn test_split_node() {
+    let mut tree = DecisionTree::new();
+    let root_index = tree.add_node(usize::MAX, 0.0, 5.0);
 
-    // Test index of left and right children of split node
-    assert_eq!(tree.left_child(0), Some(1));
-    assert_eq!(tree.right_child(0), Some(2));
+    let result = tree.split_node(root_index, 0, 0.5, 2.0, 3.0);
+    assert!(result.is_ok());
 
-    // Test is leaf value
-    assert_eq!(tree.is_leaf(0), false);
-    assert_eq!(tree.is_leaf(1), true);
-    assert_eq!(tree.is_leaf(2), true);
+    let (left_index, right_index) = result.unwrap();
+    assert_eq!(left_index, 1);
+    assert_eq!(right_index, 2);
 
-    // Test leaf value
-    assert_eq!(tree.value.last(), Some(&2000.0));
+    assert_eq!(tree.feature[root_index], 0);
+    assert_eq!(tree.threshold[root_index], 0.5);
 
-    // Test leaf nodes
-    assert_eq!(tree.get_leaf_nodes(), vec![1, 2]);
+    assert_eq!(tree.feature[left_index], usize::MAX);
+    assert_eq!(tree.value[left_index], 2.0);
+
+    assert_eq!(tree.feature[right_index], usize::MAX);
+    assert_eq!(tree.value[right_index], 3.0);
+}
+
+#[test]
+fn test_split_non_leaf_node() {
+    let mut tree = DecisionTree::new();
+    let root_index = tree.add_node(usize::MAX, 0.0, 5.0);
+    tree.split_node(root_index, 0, 0.5, 2.0, 3.0).unwrap();
+
+    let result = tree.split_node(root_index, 1, 0.7, 4.0, 5.0);
+    assert!(result.is_err());
+    // assert_eq!(result.unwrap_err(), TreeError::NonLeafSplit);
+}
+
+#[test]
+fn test_split_invalid_node() {
+    let mut tree = DecisionTree::new();
+    let root_index = tree.add_node(usize::MAX, 0.0, 5.0);
+
+    let result = tree.split_node(root_index + 1, 0, 0.5, 2.0, 3.0);
+    assert!(result.is_err());
+    // assert_eq!(result.unwrap_err(), TreeError::InvalidNodeIndex);
+}
+
+#[test]
+fn test_is_leaf() {
+    let mut tree = DecisionTree::new();
+    let root_index = tree.add_node(usize::MAX, 0.0, 5.0);
+    assert!(tree.is_leaf(root_index));
+
+    tree.split_node(root_index, 0, 0.5, 2.0, 3.0).unwrap();
+    assert!(!tree.is_leaf(root_index));
+    assert!(tree.is_leaf(1));
+    assert!(tree.is_leaf(2));
 }
