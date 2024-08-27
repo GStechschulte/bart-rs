@@ -51,9 +51,3 @@ impl Particle {
         return true;
     }
 }
-
-// Sample the value (threshold) a a feature should be split on
-fn sample_split_feature() {}
-
-// Sample a boolean flag indicating if a node should be split or not.
-fn sample_split_value() {}

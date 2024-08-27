@@ -1,3 +1,4 @@
+use core::fmt;
 use std::cmp::Ordering;
 
 /// A `DecisionTree` structure is implemented as a number of parallel
@@ -28,9 +29,19 @@ pub struct DecisionTree {
     pub value: Vec<f64>,
 }
 
-// TODO: Implement
-enum TreeError {
-    NotLeaf(usize),
+#[derive(Debug)]
+pub enum TreeError {
+    NonLeafSplit,
+    InvalidNodeIndex,
+}
+
+impl fmt::Display for TreeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TreeError::NonLeafSplit => write!(f, "Cannot split a non-leaf node"),
+            TreeError::InvalidNodeIndex => write!(f, "Node index does not exist"),
+        }
+    }
 }
 
 impl DecisionTree {
@@ -99,31 +110,34 @@ impl DecisionTree {
         threshold: f64,
         left_value: f64,
         right_value: f64,
-    ) -> (usize, usize) {
-        if self.is_leaf(node_index) {
-            // TODO: We should be using the `add_node` method here
-            let left_child_index = node_index * 2 + 1;
-            let right_child_index = node_index * 2 + 2;
-
-            // Update the current node
-            self.feature[node_index] = feature;
-            self.threshold[node_index] = threshold;
-
-            // Add left child
-            self.feature.insert(left_child_index, 0); // Placeholder feature
-            self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
-            self.value.insert(left_child_index, left_value);
-
-            // Add right child
-            self.feature.insert(right_child_index, 0); // Placeholder feature
-            self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
-            self.value.insert(right_child_index, right_value);
-
-            (left_child_index, right_child_index)
-        } else {
-            // TODO: Error enum
-            panic!("Cannot split a non-leaf node");
+    ) -> Result<(usize, usize), TreeError> {
+        if node_index >= self.feature.len() {
+            return Err(TreeError::InvalidNodeIndex);
         }
+
+        if !self.is_leaf(node_index) {
+            return Err(TreeError::NonLeafSplit);
+        }
+
+        // TODO: We should be using the `add_node` method here
+        let left_child_index = node_index * 2 + 1;
+        let right_child_index = node_index * 2 + 2;
+
+        // Update the current node
+        self.feature[node_index] = feature;
+        self.threshold[node_index] = threshold;
+
+        // Add left child
+        self.feature.insert(left_child_index, 0); // Placeholder feature
+        self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
+        self.value.insert(left_child_index, left_value);
+
+        // Add right child
+        self.feature.insert(right_child_index, 0); // Placeholder feature
+        self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
+        self.value.insert(right_child_index, right_value);
+
+        Ok((left_child_index, right_child_index))
     }
 
     pub fn predict(&self, sample: &[f64]) -> f64 {
