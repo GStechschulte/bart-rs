@@ -1,5 +1,5 @@
 pub mod data;
 pub mod particle;
-pub mod sampler;
-pub mod split_rules;
+pub mod pgbart;
+pub mod split;
 pub mod tree;
