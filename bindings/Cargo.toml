@@ -14,4 +14,5 @@ pyo3 = { version = "0.21.2", features = [
     "auto-initialize",
 ] }
 numpy = { version = "0.21.0" }
+ndarray = { version = "0.15.6", default-features = true }
 pg-bart = { version = "*", path = "../pg-bart" }

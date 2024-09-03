@@ -2,35 +2,35 @@
 
 extern crate pg_bart;
 
+use ndarray::{Array1, Array2};
 use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-use pg_bart::data::{ExternalData, Matrix};
+use pg_bart::data::PyData;
 
-pub struct PythonData {
-    X: Matrix<f64>,
-    y: Vec<f64>,
+// TODO: Is this necessary?
+// Lifetime annotation ensures PyReadonlyArray refereces
+// do not outlive ExternalData. ExternalData lives for the
+// lifetime of the PyObject
+pub struct ExternalData<'py> {
+    X: PyReadonlyArray2<'py, f64>,
+    y: PyReadonlyArray1<'py, f64>,
 }
 
-impl PythonData {
-    pub fn new(X: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>) -> Self {
-        let X = X.as_array();
-        let X = Matrix::from_vec(
-            X.as_standard_layout().into_owned().into_raw_vec(),
-            X.shape()[0],
-            X.shape()[1],
-        );
-
-        let y = y.to_vec().unwrap();
-
-        Self { X, y }
+impl<'py> ExternalData<'py> {
+    pub fn new(X: PyReadonlyArray2<'py, f64>, y: PyReadonlyArray1<'py, f64>) -> Self {
+        ExternalData { X, y }
     }
 }
 
-impl ExternalData for PythonData {
-    fn X(&self) -> &Matrix<f64> {
-        &self.X
+impl<'py> PyData for ExternalData<'py> {
+    fn X(&self) -> Array2<f64> {
+        self.X.to_owned_array()
     }
 
-    fn y(&self) -> &Vec<f64> {
-        &self.y
+    fn y(&self) -> Array1<f64> {
+        self.y.to_owned_array()
+    }
+
+    fn model_logp(&self, v: Array1<f64>) -> f64 {
+        todo!("Implement model_logp...")
     }
 }
