@@ -5,9 +5,7 @@ use std::f64::consts::PI;
 use ndarray::Array2;
 use rand::{thread_rng, Rng};
 
-use crate::data::Matrix;
-
-use crate::{sampler::PgBartState, tree::DecisionTree};
+use crate::{pgbart::PgBartState, tree::DecisionTree};
 
 /// Particle parameters
 #[derive(Debug)]
@@ -128,10 +126,8 @@ pub struct Particle {
 }
 
 impl Particle {
-    // Creates a new Particle
     pub fn new(params: ParticleParams, init_value: f64, num_samples: usize) -> Self {
-        let mut tree = DecisionTree::new();
-
+        let mut tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
 
@@ -143,18 +139,41 @@ impl Particle {
         }
     }
 
+    // TODO: Handle different `split_rules` and `response`
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
-        if let Some(node_index) = self.indices.pop_expansion_index() {
-            if !state
-                .probabilities
-                .sample_expand_flag(self.tree.node_depth(node_index))
-            {
+        let node_index = match self.indices.pop_expansion_index() {
+            Some(value) => value,
+            None => {
                 return false;
             }
-        }
+        };
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.probabilities.sample_split_index();
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
+
+        if let Some(split_value) = state.probabilities.sample_split_value(&feature_values) {
+            let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
+                .iter()
+                .partition(|&&i| X[[i, feature]] <= split_value);
+
+            let left_value = state
+                .probabilities
+                .sample_leaf_value(0.0, self.params.k_factor);
+            let right_value = state
+                .probabilities
+                .sample_leaf_value(0.0, self.params.k_factor);
+
+            if let Ok((left_index, right_index)) =
+                self.tree
+                    .split_node(node_index, feature, split_value, left_value, right_value)
+            {
+                self.indices.add_index(left_index, left_samples);
+                self.indices.add_index(right_index, right_samples);
+                self.indices.remove_index(node_index);
+                return true;
+            }
+        }
+        false
     }
 }

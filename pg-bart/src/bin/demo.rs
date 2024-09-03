@@ -1,17 +1,16 @@
-use ndarray::{array, Array2};
-// use numpy::PyArray;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-
-use pg_bart::tree::DecisionTree;
-
-#[derive(Debug)]
-struct Indices {
-    leaf_nodes: HashSet<usize>,
-    expansion_nodes: VecDeque<usize>,
-    data_indices: HashMap<usize, Vec<usize>>,
-}
+use pg_bart::particle::Particle;
+use pg_bart::{particle::ParticleParams, tree::DecisionTree};
 
 fn main() {
-    println!("Hello BART")
+    let m = 10 as f64;
+    let leaf_value = 0.5;
+
+    let particles: Vec<Particle> = (0..10)
+        .map(|_| {
+            let p_params = ParticleParams::new(100 as usize, 2 as usize, 0.5 as f64);
+            Particle::new(p_params, leaf_value, 100 as usize)
+        })
+        .collect();
+
+    println!("{:?}", particles.len());
 }

@@ -45,11 +45,11 @@ impl fmt::Display for TreeError {
 }
 
 impl DecisionTree {
-    pub fn new() -> Self {
+    pub fn new(init_value: f64) -> Self {
         DecisionTree {
             feature: Vec::new(),
             threshold: Vec::new(),
-            value: Vec::new(),
+            value: vec![init_value],
         }
     }
 

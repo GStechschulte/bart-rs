@@ -1,14 +1,7 @@
-// Trait for sampling leaf values
-pub trait LeafValueSampler {
-    fn sample_leaf_value(&self, mu: f64, kfactor: f64) -> f64;
-}
-
-// Trait for sampling split probabilities
-pub trait SplitProbabilitySampler {
-    fn sample_expand_flag(&self, depth: usize) -> bool;
-    fn sample_split_index(&self) -> usize;
-    fn sample_split_value(&self, candidates: &[f64]) -> Option<f64>;
-}
+// TODO:    Implement different split rule traits for the DecisionTree
+//          as the user can pass a `split_rules` argument
+//          `split_rules` is either `ContinuousSplitRule`, `OneHotSplitRule`
+//          or `SubsetSplitRule`.
 
 pub trait SplitRule {
     fn get_split_value(&self, values: &[f64]) -> Option<f64>;

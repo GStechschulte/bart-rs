@@ -1,18 +1,20 @@
 use ndarray::{Array1, Array2};
+use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use rand::seq::IteratorRandom;
+use rand::thread_rng;
+use rand_distr::num_traits::real::Real;
+use rand_distr::num_traits::Pow;
+use rand_distr::{Normal, Uniform};
 
+use crate::data::PyData;
+use crate::math;
 use crate::particle::{Particle, ParticleParams};
-use crate::split::{LeafValueSampler, SplitProbabilitySampler};
+use crate::probabilities::TreeProbabilities;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
 // Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 // struct, and output a new BART struct with the new state.
-
-pub trait PyData {
-    fn X(&self) -> &Array2<f64>;
-    fn y(&self) -> &Array1<f64>;
-    fn model_logp(&self, v: &Array1<f64>) -> f64;
-}
 
 // Parameter settings are used to initialize a new PgBartState
 pub struct PgBartSettings {
@@ -45,13 +47,13 @@ impl PgBartSettings {
 }
 
 pub struct PgBartState {
-    data: Box<dyn PyData>,
-    params: PgBartSettings,
-    probabilities: Probabilities,
-    predictions: Array1<f64>,
-    particles: Vec<Particle>,
-    variable_inclusion: Vec<usize>,
-    tune: bool,
+    pub data: Box<dyn PyData>,
+    pub params: PgBartSettings,
+    pub probabilities: TreeProbabilities,
+    pub predictions: Array1<f64>,
+    pub particles: Vec<Particle>,
+    pub variable_inclusion: Vec<usize>,
+    pub tune: bool,
 }
 
 impl PgBartState {
@@ -73,11 +75,31 @@ impl PgBartState {
             })
             .collect();
 
+        // Standard deviation for binary and continuous data
+        let binary = y.iter().all(|v| (*v == 0.0) || (*v == 1.0));
+        let std = if binary {
+            3.0 / m.powf(0.5)
+        } else {
+            y.std(1.0)
+        };
+
+        let N = Normal::new(0.0, std).unwrap();
+
+        // Tree probabilities
+        let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: remove clone?
+        let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
+        let probabilities = TreeProbabilities {
+            alpha_vec,
+            splitting_probs,
+            alpha: params.alpha,
+            normal: Normal::new(0.0, std).unwrap(),
+            uniform: Uniform::new(0.33, 0.75), // TODO!!!
+        };
+
         PgBartState {
             data,
             params,
-            // probabilities,
-            // leaf_sampler,
+            probabilities,
             predictions,
             particles,
             variable_inclusion,
@@ -86,6 +108,18 @@ impl PgBartState {
     }
 
     pub fn step(&mut self) {
-        todo!("Implement")
+        let num_to_update = self.num_to_update();
+        let mut rng = thread_rng();
+        let indices: Vec<usize> = (0..self.params.n_trees).choose_multiple(&mut rng, num_to_update);
+
+        for &particle_index in &indices {
+            let selected_particle = &self.particles[particle_index];
+            // let local_preds = &self.predictions - &selected_particle.predict(&self.data.X);
+        }
+    }
+
+    fn num_to_update(&self) -> usize {
+        let fraction = if self.tune { 0.5 } else { 0.25 };
+        ((self.particles.len() as f64) * fraction).floor() as usize
     }
 }
