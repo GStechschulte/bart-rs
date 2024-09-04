@@ -33,9 +33,19 @@ def main():
     # xdata needs to be 2D for BART
     x_data = x_centers[:, None]
     # express data as the rate number of disaster per year
-    y_data = hist
+    y_data = hist.astype(np.float64)
 
-    # print(x_data)
+    bart_rs.initialize_bart(
+        X=x_data,
+        y=y_data,
+        logp=10,
+        alpha=0.50,
+        n_trees=50,
+        n_particles=10,
+        kfactor=0.25,
+        batch=(0.1, 0.1),
+        split_prior=np.array([0.75, 0.25])
+    )
 
 
 if __name__ == "__main__":
