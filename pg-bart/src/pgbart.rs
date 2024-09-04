@@ -1,9 +1,8 @@
-use ndarray::{Array1, Array2};
-use numpy::{PyReadonlyArray1, PyReadonlyArray2};
+use ndarray::Array1;
+
 use rand::seq::IteratorRandom;
 use rand::thread_rng;
-use rand_distr::num_traits::real::Real;
-use rand_distr::num_traits::Pow;
+
 use rand_distr::{Normal, Uniform};
 
 use crate::data::PyData;

@@ -1,5 +1,4 @@
 use ndarray::{Array1, Array2};
-use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 
 pub trait PyData {
     fn X(&self) -> Array2<f64>;

@@ -1,9 +1,5 @@
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::f64::consts::PI;
-
 use ndarray::Array2;
-use rand::{thread_rng, Rng};
+use std::collections::{HashSet, VecDeque};
 
 use crate::{pgbart::PgBartState, tree::DecisionTree};
 
