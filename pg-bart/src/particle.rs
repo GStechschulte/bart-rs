@@ -1,4 +1,4 @@
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use std::collections::{HashSet, VecDeque};
 
 use crate::{pgbart::PgBartState, tree::DecisionTree};
@@ -95,7 +95,6 @@ impl Weight {
         self.log_likelihood = log_likelihood;
     }
 
-    // --- Getters ---
     pub fn log_w(&self) -> f64 {
         self.log_w
     }
@@ -104,26 +103,25 @@ impl Weight {
         self.log_likelihood
     }
 
-    // --- Setters ---
     pub fn set_log_w(&mut self, log_w: f64) {
         self.log_w = log_w;
     }
 }
 
-/// A Particle wraps DecisionTree along with the SampleIndices of the
+/// A Particle wraps a DecisionTree along with the SampleIndices of the
 /// training samples that land in node i, and the Weight (log-likelihood)
 /// of the Particle
 #[derive(Debug)]
 pub struct Particle {
-    params: ParticleParams,
-    tree: DecisionTree,
-    indices: SampleIndices,
-    weight: Weight,
+    pub params: ParticleParams,
+    pub tree: DecisionTree,
+    pub indices: SampleIndices,
+    pub weight: Weight,
 }
 
 impl Particle {
     pub fn new(params: ParticleParams, init_value: f64, num_samples: usize) -> Self {
-        let mut tree = DecisionTree::new(init_value);
+        let tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
 
@@ -171,5 +169,24 @@ impl Particle {
             }
         }
         false
+    }
+
+    pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
+        let mut predictions = Array1::zeros(X.nrows());
+
+        for (node_index, samples) in self.indices.data_indices.iter().enumerate() {
+            if self.tree.is_leaf(node_index) {
+                let leaf_value = self.tree.value[node_index];
+                for &sample_index in samples {
+                    predictions[sample_index] = leaf_value
+                }
+            }
+        }
+
+        predictions
+    }
+
+    pub fn finished(&self) -> bool {
+        self.indices.is_empty()
     }
 }
