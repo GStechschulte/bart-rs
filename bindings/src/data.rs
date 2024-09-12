@@ -21,6 +21,7 @@ impl ExternalData {
     }
 }
 
+// TODO: DO NOT CLONE...Use Rc<T>
 impl PyData for ExternalData {
     fn X(&self) -> Array2<f64> {
         self.X.clone()

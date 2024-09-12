@@ -4,7 +4,7 @@ extern crate pg_bart;
 
 use crate::data::ExternalData;
 
-use numpy::{PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::pgbart::{PgBartSettings, PgBartState};
 use pyo3::prelude::*;
 
@@ -48,12 +48,27 @@ fn initialize(
     );
     let state = PgBartState::new(params, data);
 
+    // Just testing things
+    println!("{:?}", state.particles);
+
     StateWrapper { state }
+}
+
+#[pyfunction]
+fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) -> &'py PyArray1<f64> {
+    wrapper.state.tune = tune;
+    wrapper.state.step();
+
+    let predictions = wrapper.state.predictions();
+    let py_array = PyArray1::from_array(py, &predictions.view());
+
+    py_array
 }
 
 #[pymodule]
 fn bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(shape, m)?)?;
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
+    m.add_function(wrap_pyfunction!(step, m)?)?;
     Ok(())
 }
