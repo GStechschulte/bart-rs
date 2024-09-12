@@ -19,8 +19,6 @@ def main():
     result_rs = bart_rs.shape(X)
     print(result_rs)
 
-    bart_rs.initialize(X, y)
-
     # ----------------------
 
     coal = np.loadtxt("data/coal.txt")
@@ -35,17 +33,32 @@ def main():
     # express data as the rate number of disaster per year
     y_data = hist.astype(np.float64)
 
-    bart_rs.initialize_bart(
-        X=x_data,
-        y=y_data,
+    # or
+
+    np.random.seed(0)
+    n = 50
+    X = np.random.uniform(0, 10, n)
+    Y = np.sin(X) + np.random.normal(0, 0.5, n)
+
+    print(f"y.mean() = {Y.mean()}")
+
+    state = bart_rs.initialize(
+        X=X[..., None],
+        y=Y,
         logp=10,
         alpha=0.50,
-        n_trees=50,
-        n_particles=10,
+        n_trees=20,
+        n_particles=5,
         kfactor=0.25,
         batch=(0.1, 0.1),
         split_prior=np.array([0.75, 0.25])
     )
+
+    print(state)
+
+    sum_trees = bart_rs.step(state, True)
+
+    print(sum_trees)
 
 
 if __name__ == "__main__":
