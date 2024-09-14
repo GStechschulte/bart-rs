@@ -1,27 +1,6 @@
 use core::fmt;
 use std::cmp::Ordering;
 
-/// A `DecisionTree` structure is implemented as a number of parallel
-/// vectors. Using parallel vectors allows for a more cache-efficient
-/// implementation. Moreover, index accessing allows one to avoid borrow
-/// checker issues related to recursive binary tree implementations.
-///
-/// The i-th element of each vector holds information about
-/// node `i`. Node 0 is the tree's root. Some of the arrays only apply
-/// to either leaves or split nodes. In this case, the values of the
-/// nodes of the other vector is arbitrary. For example, `feature` and
-/// `threshold` vectors only apply to split nodes. The values for leaf
-/// nodes in these arrays are therefore arbitrary. Among the vectors, we
-/// have:
-/// - `feature`: Stores the feature index for splitting at the i'th node.
-/// - `threshold`: Stores the threshold value for the i'th node split.
-/// - `value`: Stores output value for the i'th node
-///
-/// # Examples
-///
-/// ```
-/// let mut treee = DecisionTree::new();
-/// ```
 #[derive(Debug)]
 pub struct DecisionTree {
     pub feature: Vec<usize>,
@@ -45,6 +24,28 @@ impl fmt::Display for TreeError {
 }
 
 impl DecisionTree {
+    /// Creates a new DecisionTree with an initial value set as the root node.
+    /// A decision tree is implemented as three parallel vectors.
+    ///
+    /// Using parallel vectors allows for a more cache-efficient implementation.
+    /// Moreover, index accessing allows one to more easily avoid borrow checker
+    /// issues related to classical recursive binary tree implementations.
+    ///
+    /// The i-th element of each vector holds information about node `i`. Node 0
+    /// is the tree's root. Some of the arrays only apply to either leaves or
+    /// split nodes. In this case, the values of the nodes of other vectors is
+    /// arbitrary. For example, `feature` and `threshold` vectors only apply to
+    /// split nodes. The values for leaf nodes in these arrays are therefore
+    /// arbitrary. The threee vectors are:
+    /// - `feature`. Stores the feature index for splitting at the i'th node.
+    /// - `threshold`. Stores the threshold value for the i'th node split.
+    /// - `value`. Stores output value for the i'th node
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut tree = DecisionTree::new(0.5);
+    /// ```
     pub fn new(init_value: f64) -> Self {
         DecisionTree {
             feature: Vec::new(),
