@@ -3,7 +3,7 @@ use core::f64;
 use ndarray::Array1;
 
 use rand::seq::IteratorRandom;
-use rand::thread_rng;
+use rand::{thread_rng, Rng};
 
 use rand::distributions::WeightedIndex;
 use rand_distr::{Distribution, Normal, Uniform};
@@ -17,9 +17,9 @@ use crate::tree::DecisionTree;
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
 // Functions that do Particle Gibbs steps operate by taking as input a PgBartState
-// struct, and output a new BART struct with the new state.
+// struct, and then iterate (step) on this PgBartState.
 
-/// PgBartSetting are used to initialize a new PgBartState
+// PgBartSetting are used to initialize a new PgBartState
 pub struct PgBartSettings {
     n_trees: usize,
     n_particles: usize,
@@ -49,6 +49,8 @@ impl PgBartSettings {
     }
 }
 
+/// PgBartState is the main entry point of the Particle-Gibbs sampler
+/// for Bayesian Additive Regression Trees (BART).
 pub struct PgBartState {
     pub data: Box<dyn PyData>,
     pub params: PgBartSettings,
@@ -60,6 +62,24 @@ pub struct PgBartState {
 }
 
 impl PgBartState {
+    /// Creates a PgBartState with the given PgBartSettings and PyData.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // data is ExternalData from the Python user
+    /// let data = Box::new(data);
+    /// // PgBartSettings are passed from the Python user
+    /// let params = PgBartSettings::new(
+    ///     n_trees,
+    ///     n_particles,
+    ///     alpha,
+    ///     kfactor,
+    ///     batch,
+    ///     split_prior.to_vec().unwrap(),
+    ///     );
+    /// let state = PgBartState::new(params, data);
+    /// ```
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
         let X = data.X();
         let y = data.y();
@@ -71,7 +91,8 @@ impl PgBartState {
 
         let variable_inclusion = vec![0; X.ncols()];
 
-        let particles = (0..params.n_trees)
+        // Particles can grow (mutate)
+        let mut particles = (0..params.n_trees)
             .map(|_| {
                 let p_params = ParticleParams::new(X.nrows(), X.ncols(), params.default_kf);
                 Particle::new(p_params, leaf_value, X.nrows())
@@ -110,14 +131,22 @@ impl PgBartState {
         }
     }
 
+    /// Runs the Particle Gibbs sampler sequentially for M iterations where M is the number
+    /// of trees.
+    ///
+    /// A single step will initialize a set of particles N, of which one will replace the
+    /// current tree M_i. To decide which particle will replace the current tree, the N
+    /// particles are grown until the probability of growing is less than some criteria.
+    /// The grown particles are then resampled according to their log-likelihood, of which
+    /// one is selected to replace the current tree M_i.
     pub fn step(&mut self) {
         let batch: (usize, usize) = (
             (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize,
             (self.params.n_trees as f64 * self.params.batch.1).ceil() as usize,
         );
 
-        // Logic for determining how many trees to update in a batch given
-        // tuning and the batch size
+        // Logic for determining how many trees to update in a batch given tuning and the
+        // batch size
         let batch_size = if self.tune { batch.0 } else { batch.1 };
         let lower: usize = 0;
         let upper = (lower as f64 + batch_size as f64).floor() as usize;
@@ -130,13 +159,13 @@ impl PgBartState {
 
         let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
 
-        // TODO: Use Rayon for parallel processing. Would need to refactor to use Arc types, etc.
+        // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         for (iter, tree_id) in tree_ids.enumerate() {
-            // Fetch the particle (aka tree) to modify
+            // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
-            // Compute the sum of trees without the old tree that we are attempting to replace
+            // Compute the sum of trees without the old particle we are attempting to replace
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
@@ -144,36 +173,51 @@ impl PgBartState {
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
 
-            // while !local_particles.iter().all(|p| p.finished()) {
-            //     for p in local_particles.iter_mut().skip(1) {
-            //         if p.grow(&self.data.X(), self) {
-            //             self.update_weight(p, &local_preds);
-            //         }
-            //     }
+            // Grow each particle (skipping the first) until the probability that the node
+            // in this particle will remain a leaf node is "high"
+            while !local_particles.iter().all(|p| p.finished()) {
+                for p in local_particles.iter_mut().skip(1) {
+                    if p.grow(&self.data.X(), self) {
+                        self.update_weight(p, &old_predictions);
+                    }
+                }
+            }
 
-            //     let normalized_weights = self.normalize_weights(&local_particles);
-            //     let new_particle = self.select_particle(&local_particles, &normalized_weights);
+            // Normalize log-likelihood and resample particles
+            let normalized_weights = self.normalize_weights(&local_particles);
+            let mut resampled_particles =
+                self.resample_particles(&mut local_particles, &normalized_weights);
 
-            //     // Update predictions and variable inclusion
-            //     self.predictions += &new_particle.predict(&self.data.X())
-            //         - &selected_particle.predict(&self.data.X());
-            //     // self.update_variable_inclusion(&new_particle.tree)
-            //     self.particles[particle_index] = new_particle;
+            // Normalize log-likelihood again and select a particle to replace M_i
+            let normalized_weights = self.normalize_weights(&resampled_particles);
+            let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
+
+            // Update the sum of trees
+            let new_particle_preds = &new_particle.predict(&self.data.X());
+            let updated_preds = predictions_minus_old + new_particle_preds;
+            self.predictions = updated_preds;
+
+            // Replace particle (tree) G_i with the new particle
+            self.particles[tree_id] = new_particle;
+
+            // TODO: !!!!
+            // Update variable inclusion
+            // self.update_variable_inclusion(&new_particle.tree)
 
             // if self.tune {
             //     self.update_probabilities();
-            // }
-            // }
+            //     }
         }
     }
 
+    /// Generate an initial set of particles for _this_ tree.
     fn initialize_particles(&self, sum_trees_noi: &Array1<f64>, mu: f64) -> Vec<Particle> {
-        let mut particles: Vec<Particle> = Vec::with_capacity(self.params.n_particles);
-
         let X = self.data.X();
         let leaf_value = mu / (self.params.n_trees as f64);
 
-        let mut particles: Vec<Particle> = (0..self.params.n_particles)
+        // Create a new vector of Particles with the same ParticleParams passed to
+        // PgBartState::new(...)
+        let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
                 let p_params = ParticleParams::new(X.nrows(), X.ncols(), self.params.default_kf);
                 let mut particle = Particle::new(p_params, leaf_value, X.nrows());
@@ -189,12 +233,15 @@ impl PgBartState {
         particles
     }
 
+    /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
+        // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.model_logp(preds);
         particle.weight.reset(log_likelihood);
     }
 
+    /// Ensures the weights (log-likelihood) of the Particles sums to 1.
     fn normalize_weights(&self, particles: &[Particle]) -> Vec<f64> {
         let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w()).collect();
 
@@ -213,44 +260,69 @@ impl PgBartState {
         weights.iter().map(|&w| w / sum_weights).collect()
     }
 
-    // fn resample_particles(
-    //     &self,
-    //     particles: Vec<Particle>,
-    //     normalized_weights: &[f64],
-    // ) -> Vec<Particle> {
-    //     let mut rng = thread_rng();
-    //     let dist = WeightedIndex::new(normalized_weights).unwrap();
-    //     let mut new_particles = Vec::with_capacity(particles.len());
-    //     new_particles.push(particles[0].clone());
+    /// Uses systematic resampling to sample new Particles.
+    fn resample_particles(&self, particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+        let num_particles = particles.len();
 
-    //     for _ in 1..particles.len() {
-    //         let index = dist.sample(&mut rng);
-    //         new_particles.push(particles[index].clone());
-    //     }
+        // Keep first particle (original tree)
+        let mut resampled_particles: Vec<Particle> = Vec::with_capacity(num_particles);
+        resampled_particles.push(particles.remove(0));
 
-    //     new_particles
-    // }
+        // Systematic resample all but the first particle
+        let resampled_indices = self.systematic_resample(&weights[1..], num_particles - 1);
 
-    // fn select_particle(&self, particles: &[Particle], normalized_weights: &[f64]) -> Particle {
-    //     let mut rng = thread_rng();
-    //     let dist = WeightedIndex::new(normalized_weights).unwrap();
-    //     let index = dist.sample(&mut rng);
-    //     particles[index].clone()
-    // }
+        // Transfer ownership of Particles in particles to resampled_particles
+        for &idx in &resampled_indices {
+            // swap_remove does not preserve ordering but this is okay since we don't use
+            // particles (local_particles) after calling resample_particles
+            resampled_particles.push(particles.swap_remove(idx + 1));
+        }
 
-    // fn update_variable_inclusion(&mut self) {
-    //     for (i, &count) in self.variable_inclusion.iter().enumerate() {
-    //         self.probabilities.alpha_vec[i] += count as f64;
-    //     }
-
-    //     self.probabilities.update_splitting_probs();
-    // }
-
-    fn num_to_update(&self) -> usize {
-        let fraction = if self.tune { 0.5 } else { 0.25 };
-        ((self.particles.len() as f64) * fraction).floor() as usize
+        resampled_particles
     }
 
+    /// Systematic resampling using weights and number of particles to return
+    /// indices of the Particles.
+    ///
+    /// Note: adapted from https://github.com/nchopin/particles
+    fn systematic_resample(&self, weights: &[f64], num_samples: usize) -> Vec<usize> {
+        // Generate a uniform ranom number and use it to create evenly spaced points
+        let mut rng = rand::thread_rng();
+        let u = rng.gen::<f64>() / num_samples as f64;
+
+        let cumulative_sum = weights
+            .iter()
+            .scan(0.0, |acc, &x| {
+                *acc += x;
+                Some(*acc)
+            })
+            .collect::<Vec<f64>>();
+
+        // Find the indices where the cumulative sum exceeds the evenly spaced points
+        let mut indices = Vec::with_capacity(num_samples);
+        let mut j = 0;
+        for i in 0..num_samples {
+            while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64
+            {
+                j += 1;
+            }
+            indices.push(j);
+        }
+
+        indices
+    }
+
+    /// Sample a Particle proportional to its weight.
+    fn select_particle(&self, particles: &mut Vec<Particle>, weights: &[f64]) -> Particle {
+        let mut rng = thread_rng();
+        let dist = WeightedIndex::new(weights).unwrap();
+        let index = dist.sample(&mut rng);
+
+        // Remove and return the selected particle, transferring ownership
+        particles.swap_remove(index)
+    }
+
+    /// Get predictions
     pub fn predictions(&self) -> &Array1<f64> {
         &self.predictions
     }

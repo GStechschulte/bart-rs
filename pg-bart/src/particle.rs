@@ -108,9 +108,9 @@ impl Weight {
     }
 }
 
-/// A Particle wraps a DecisionTree along with the SampleIndices of the
-/// training samples that land in node i, and the Weight (log-likelihood)
-/// of the Particle
+/// A Particle wraps a decision tree along with fields for the paricle
+/// parameters, indices of the observed samples that land in node i,
+/// and the weight of the Particle
 #[derive(Debug)]
 pub struct Particle {
     pub params: ParticleParams,

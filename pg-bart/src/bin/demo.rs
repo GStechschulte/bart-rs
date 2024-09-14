@@ -81,6 +81,22 @@ fn main() {
     update_particles(&mut particles);
 }
 
+// struct P {
+//     val: f64,
+// }
+
+// struct State {
+//     particles: Vec<P>,
+// }
+
+// impl State {
+//     fn step(&mut self) {
+//         for p in &mut self.particles {
+//             p += 1.0
+//         }
+//     }
+// }
+
 struct Particles {
     position_: f64,
     velocity: f64,
