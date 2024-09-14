@@ -2,6 +2,8 @@
 //          as the user can pass a `split_rules` argument
 //          `split_rules` is either `ContinuousSplitRule`, `OneHotSplitRule`
 //          or `SubsetSplitRule`.
+//
+//          The code below is simply a template!!!
 
 pub trait SplitRule {
     fn get_split_value(&self, values: &[f64]) -> Option<f64>;
