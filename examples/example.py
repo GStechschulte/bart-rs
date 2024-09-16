@@ -41,17 +41,19 @@ def main():
     Y = np.sin(X) + np.random.normal(0, 0.5, n)
 
     print(f"y.mean() = {Y.mean()}")
+    print(f"X.shape: {np.array(X[..., None].shape[1])}")
 
     state = bart_rs.initialize(
         X=X[..., None],
         y=Y,
         logp=10,
-        alpha=0.50,
+        alpha=0.95,
+        beta=2.0,
+        split_prior=np.array([1.0]),
         n_trees=20,
         n_particles=5,
         kfactor=0.25,
-        batch=(0.1, 0.1),
-        split_prior=np.array([0.75, 0.25])
+        batch=(0.1, 0.1)
     )
 
     print(state)

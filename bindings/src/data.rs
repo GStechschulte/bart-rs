@@ -21,7 +21,7 @@ impl ExternalData {
     }
 }
 
-// TODO: DO NOT CLONE...Use Rc<T>
+// TODO: DO NOT CLONE...Use Rc<T>?
 impl PyData for ExternalData {
     fn X(&self) -> Array2<f64> {
         self.X.clone()
@@ -32,6 +32,7 @@ impl PyData for ExternalData {
     }
 
     fn model_logp(&self, v: Array1<f64>) -> f64 {
-        todo!("Implement model_logp")
+        // todo!("Implement model_logp")
+        0.5
     }
 }
