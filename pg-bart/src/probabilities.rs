@@ -8,14 +8,18 @@ pub struct TreeProbabilities {
     pub alpha_vec: Vec<f64>,
     pub splitting_probs: Vec<f64>,
     pub alpha: f64,
+    pub beta: f64,
 }
 
 impl TreeProbabilities {
-    // Sample a boolean flag indicating if a node should be split or not
+    /// Sample a boolean flag indicating if a node should be split or not.
+    ///
+    /// The deeper a leaf node, the larger the prior probability it will
+    /// remain a leaf node.
     pub fn sample_expand_flag(&self, depth: usize) -> bool {
         let mut rng = rand::thread_rng();
 
-        let p = 1. - self.alpha.powi(depth as i32);
+        let p = 1. - self.alpha * (1. + depth as f64).powf(-self.beta);
         let res = p < rng.gen::<f64>();
 
         res

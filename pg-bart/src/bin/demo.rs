@@ -1,5 +1,8 @@
 use rand::seq::IteratorRandom;
 use rand::thread_rng;
+use rand::{self, Rng};
+
+use ndarray::Array2;
 
 use pg_bart::particle::Particle;
 use pg_bart::{particle::ParticleParams, tree::DecisionTree};
@@ -67,43 +70,40 @@ fn main() {
 
     println!("------------------------");
 
-    let mut particles = vec![
-        Particles {
-            position_: 0.0,
-            velocity: 1.0,
-        },
-        Particles {
-            position_: 1.0,
-            velocity: 2.0,
-        },
-    ];
+    let X = Array2::from_shape_vec(
+        (10, 3),
+        vec![
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7,
+            1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0,
+        ],
+    )
+    .unwrap();
 
-    update_particles(&mut particles);
+    let data_indices: Vec<Vec<usize>> = vec![Vec::from_iter(0..X.nrows())];
+    let samples = &data_indices[0];
+    let feature = 2 as usize;
+
+    println!("X = {}", X);
+    println!("data_indices: {:?}", data_indices);
+    println!("Using samples: {:?}", samples);
+    println!("Splitting on feature: {}", feature);
+
+    let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
+
+    println!("Routed feature values: {:?}", feature_values);
+
+    let mut rng = rand::thread_rng();
+
+    let alpha = 0.95;
+    let depth = 1 as f64;
+    let beta = 2.0;
+
+    // let p = 1. - (alpha * ((1 + depth).pow(-beta as u32)) as f64);
+    let p = 1. - alpha * (1.0 + depth).powf(-beta);
+    let res = p < rng.gen::<f64>();
+    println!("p: {}, res: {}", p, res);
 }
 
-// struct P {
-//     val: f64,
-// }
-
-// struct State {
-//     particles: Vec<P>,
-// }
-
-// impl State {
-//     fn step(&mut self) {
-//         for p in &mut self.particles {
-//             p += 1.0
-//         }
-//     }
-// }
-
-struct Particles {
-    position_: f64,
-    velocity: f64,
-}
-
-fn update_particles(particles: &mut Vec<Particles>) {
-    for particle in particles.iter_mut() {
-        particle.position_ += particle.velocity;
-    }
+struct SampleIndices {
+    indicies: Vec<Vec<usize>>,
 }

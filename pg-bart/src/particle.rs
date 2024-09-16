@@ -142,9 +142,23 @@ impl Particle {
             }
         };
 
+        let node_index_depth = self.tree.node_depth(node_index);
+        let expand = state.probabilities.sample_expand_flag(node_index_depth);
+        if !expand {
+            return false;
+        }
+
         let samples = &self.indices.data_indices[node_index];
         let feature = state.probabilities.sample_split_index();
+
+        println!("Using samples: {:?}", samples);
+        println!("Splitting on feature: {}", feature);
+
+        // For each index i in samples, access the 2d array X at position [i, feature]
+        // where i represents a row and feature represents a column, and collect the results
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
+
+        println!("Routed feature values: {:?}", feature_values);
 
         if let Some(split_value) = state.probabilities.sample_split_value(&feature_values) {
             let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples

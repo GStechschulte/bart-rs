@@ -2,7 +2,6 @@ use core::f64;
 
 use ndarray::Array1;
 
-use rand::seq::IteratorRandom;
 use rand::{thread_rng, Rng};
 
 use rand::distributions::WeightedIndex;
@@ -12,7 +11,6 @@ use crate::data::PyData;
 use crate::math;
 use crate::particle::{Particle, ParticleParams};
 use crate::probabilities::TreeProbabilities;
-use crate::tree::DecisionTree;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -24,6 +22,7 @@ pub struct PgBartSettings {
     n_trees: usize,
     n_particles: usize,
     alpha: f64,
+    beta: f64,
     default_kf: f64,
     batch: (f64, f64),
     init_alpha_vec: Vec<f64>,
@@ -34,6 +33,7 @@ impl PgBartSettings {
         n_trees: usize,
         n_particles: usize,
         alpha: f64,
+        beta: f64,
         default_kf: f64,
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
@@ -42,6 +42,7 @@ impl PgBartSettings {
             n_trees,
             n_particles,
             alpha,
+            beta,
             default_kf,
             batch,
             init_alpha_vec,
@@ -110,12 +111,13 @@ impl PgBartState {
         let N = Normal::new(0.0, std).unwrap();
 
         // Tree probabilities
-        let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: remove clone?
+        let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
         let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
         let probabilities = TreeProbabilities {
             alpha_vec,
             splitting_probs,
             alpha: params.alpha,
+            beta: params.beta,
             normal: Normal::new(0.0, std).unwrap(), // TODO: Should mu be fixed?
             uniform: Uniform::new(0.33, 0.75),      // TODO: Should these params. be fixed?
         };
@@ -136,7 +138,9 @@ impl PgBartState {
     ///
     /// A single step will initialize a set of particles N, of which one will replace the
     /// current tree M_i. To decide which particle will replace the current tree, the N
-    /// particles are grown until the probability of growing is less than some criteria.
+    /// particles are grown until the probability of a leaf node expanding is less than a
+    /// random value in the interval [0, 1].
+    ///
     /// The grown particles are then resampled according to their log-likelihood, of which
     /// one is selected to replace the current tree M_i.
     pub fn step(&mut self) {
@@ -182,7 +186,6 @@ impl PgBartState {
                     }
                 }
             }
-
             // Normalize log-likelihood and resample particles
             let normalized_weights = self.normalize_weights(&local_particles);
             let mut resampled_particles =
@@ -197,8 +200,10 @@ impl PgBartState {
             let updated_preds = predictions_minus_old + new_particle_preds;
             self.predictions = updated_preds;
 
-            // Replace particle (tree) G_i with the new particle
+            // Replace particle (tree) M_i with the new particle
             self.particles[tree_id] = new_particle;
+
+            println!("Done...");
 
             // TODO: !!!!
             // Update variable inclusion
