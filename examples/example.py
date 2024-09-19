@@ -5,22 +5,6 @@ import numpy as np
 
 def main():
 
-    print(os.getcwd())
-
-    for filename in os.listdir():
-        print(filename)
-
-    X = np.array([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0], [5.0, 6.0, 0.0]])
-    print(X)
-    print(X.shape)
-
-    y = np.array([20.0, 21.0, 22.3])
-
-    result_rs = bart_rs.shape(X)
-    print(result_rs)
-
-    # ----------------------
-
     coal = np.loadtxt("data/coal.txt")
     # discretize data
     years = int(coal.max() - coal.min())
@@ -50,9 +34,10 @@ def main():
         alpha=0.95,
         beta=2.0,
         split_prior=np.array([1.0]),
+        response="constant",
         n_trees=20,
         n_particles=5,
-        kfactor=0.25,
+        leaf_sd=0.25,
         batch=(0.1, 0.1)
     )
 

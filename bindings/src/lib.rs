@@ -2,10 +2,12 @@ mod data;
 
 extern crate pg_bart;
 
+use std::str::FromStr;
+
 use crate::data::ExternalData;
 
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-use pg_bart::pgbart::{PgBartSettings, PgBartState};
+use pg_bart::pgbart::{PgBartSettings, PgBartState, Response};
 use pyo3::prelude::*;
 
 #[pyclass(unsendable)]
@@ -22,22 +24,24 @@ fn initialize(
     beta: f64,
     split_prior: PyReadonlyArray1<f64>,
     // split_rules: TODO: Implement SplitRules
-    // response: TODO: Implement 'mix', 'linear', 'constant'
+    response: String,
     n_trees: usize,
     n_particles: usize,
-    kfactor: f64,
+    leaf_sd: f64,
     batch: (f64, f64),
 ) -> StateWrapper {
     let data = ExternalData::new(X, y);
     let data = Box::new(data);
+    let response = Response::from_str(&response).unwrap();
     let params = PgBartSettings::new(
         n_trees,
         n_particles,
         alpha,
         beta,
-        kfactor,
+        leaf_sd,
         batch,
         split_prior.to_vec().unwrap(),
+        response,
     );
     let state = PgBartState::new(params, data);
 
