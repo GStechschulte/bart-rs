@@ -2,7 +2,7 @@ use rand::seq::IteratorRandom;
 use rand::thread_rng;
 use rand::{self, Rng};
 
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 
 use pg_bart::particle::Particle;
 use pg_bart::{particle::ParticleParams, tree::DecisionTree};
@@ -98,10 +98,19 @@ fn main() {
     let depth = 1 as f64;
     let beta = 2.0;
 
-    // let p = 1. - (alpha * ((1 + depth).pow(-beta as u32)) as f64);
     let p = 1. - alpha * (1.0 + depth).powf(-beta);
     let res = p < rng.gen::<f64>();
     println!("p: {}, res: {}", p, res);
+
+    let left_sample: Vec<usize> = vec![0, 1, 2];
+    let predictions = Array1::from_vec(vec![1., 2., 5., 10., 11., 15.]);
+
+    let left_preds = left_sample
+        .iter()
+        .map(|&i| predictions[i])
+        .collect::<Vec<f64>>();
+
+    println!("{:?}", left_preds);
 }
 
 struct SampleIndices {
