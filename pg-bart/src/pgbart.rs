@@ -1,4 +1,6 @@
 use core::f64;
+use std::fmt::format;
+use std::str::FromStr;
 
 use ndarray::Array1;
 
@@ -17,15 +19,34 @@ use crate::probabilities::TreeProbabilities;
 // Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 // struct, and then iterate (step) on this PgBartState.
 
+#[derive(Debug, PartialEq)]
+pub enum Response {
+    Constant,
+    Linear,
+}
+
+impl FromStr for Response {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "constant" => Ok(Response::Constant),
+            "linear" => Ok(Response::Linear),
+            _ => Err(format!("Unknown response type: {}", s)),
+        }
+    }
+}
+
 // PgBartSetting are used to initialize a new PgBartState
 pub struct PgBartSettings {
-    n_trees: usize,
-    n_particles: usize,
-    alpha: f64,
-    beta: f64,
-    default_kf: f64,
-    batch: (f64, f64),
-    init_alpha_vec: Vec<f64>,
+    pub n_trees: usize,
+    pub n_particles: usize,
+    pub alpha: f64,
+    pub beta: f64,
+    pub leaf_sd: f64,
+    pub batch: (f64, f64),
+    pub init_alpha_vec: Vec<f64>,
+    pub response: Response,
 }
 
 impl PgBartSettings {
@@ -34,18 +55,20 @@ impl PgBartSettings {
         n_particles: usize,
         alpha: f64,
         beta: f64,
-        default_kf: f64,
+        leaf_sd: f64,
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
+        response: Response,
     ) -> Self {
         Self {
             n_trees,
             n_particles,
             alpha,
             beta,
-            default_kf,
+            leaf_sd,
             batch,
             init_alpha_vec,
+            response,
         }
     }
 }
@@ -75,9 +98,9 @@ impl PgBartState {
     ///     n_trees,
     ///     n_particles,
     ///     alpha,
-    ///     kfactor,
     ///     batch,
     ///     split_prior.to_vec().unwrap(),
+    ///     response,
     ///     );
     /// let state = PgBartState::new(params, data);
     /// ```
@@ -95,7 +118,7 @@ impl PgBartState {
         // Particles can grow (mutate)
         let mut particles = (0..params.n_trees)
             .map(|_| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols(), params.default_kf);
+                let p_params = ParticleParams::new(X.nrows(), X.ncols(), params.leaf_sd);
                 Particle::new(p_params, leaf_value, X.nrows())
             })
             .collect();
@@ -224,7 +247,7 @@ impl PgBartState {
         // PgBartState::new(...)
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols(), self.params.default_kf);
+                let p_params = ParticleParams::new(X.nrows(), X.ncols(), self.params.leaf_sd);
                 let mut particle = Particle::new(p_params, leaf_value, X.nrows());
 
                 if i == 0 {

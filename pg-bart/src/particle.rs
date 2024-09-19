@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2};
+use ndarray::{s, Array1, Array2};
 use std::collections::{HashSet, VecDeque};
 
 use crate::{pgbart::PgBartState, tree::DecisionTree};
@@ -8,23 +8,23 @@ use crate::{pgbart::PgBartState, tree::DecisionTree};
 pub struct ParticleParams {
     n_points: usize,
     n_features: usize,
-    k_factor: f64,
+    leaf_sd: f64,
 }
 
 impl ParticleParams {
-    pub fn new(n_points: usize, n_features: usize, k_factor: f64) -> Self {
+    pub fn new(n_points: usize, n_features: usize, leaf_sd: f64) -> Self {
         ParticleParams {
             n_points,
             n_features,
-            k_factor,
+            leaf_sd,
         }
     }
 
-    pub fn with_new_kf(&self, k_factor: f64) -> Self {
+    pub fn with_new_kf(&self, leaf_sd: f64) -> Self {
         ParticleParams {
             n_points: self.n_points,
             n_features: self.n_features,
-            k_factor,
+            leaf_sd,
         }
     }
 }
@@ -151,33 +151,59 @@ impl Particle {
         let samples = &self.indices.data_indices[node_index];
         let feature = state.probabilities.sample_split_index();
 
-        println!("Using samples: {:?}", samples);
-        println!("Splitting on feature: {}", feature);
-
         // For each index i in samples, access the 2d array X at position [i, feature]
         // where i represents a row and feature represents a column, and collect the results
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
 
-        println!("Routed feature values: {:?}", feature_values);
-
         if let Some(split_value) = state.probabilities.sample_split_value(&feature_values) {
+            // Index of left and right samples
             let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
                 .iter()
                 .partition(|&&i| X[[i, feature]] <= split_value);
 
-            let left_value = state
-                .probabilities
-                .sample_leaf_value(0.0, self.params.k_factor);
-            let right_value = state
-                .probabilities
-                .sample_leaf_value(0.0, self.params.k_factor);
+            // Extract predictions for left and right leaf nodes
+            let left_predictions = left_samples
+                .iter()
+                .map(|&i| state.predictions[i])
+                .collect::<Vec<f64>>();
+            let right_predictions = right_samples
+                .iter()
+                .map(|&i| state.predictions[i])
+                .collect::<Vec<f64>>();
 
+            // Extract the observations that belong to the left and right leaf nodes
+            let left_obs = left_samples.iter().map(|&i| X[[i, feature]]).collect();
+            let right_obs: Vec<_> = right_samples.iter().map(|&i| X[[i, feature]]).collect();
+
+            // TODO: Use state.params.shape once implemented...
+            let shape = 1 as usize;
+
+            let left_value = state.probabilities.sample_leaf_value(
+                &left_predictions,
+                &left_obs,
+                state.params.n_trees,
+                &state.params.leaf_sd,
+                shape,
+                &state.params.response,
+            );
+            let right_value = state.probabilities.sample_leaf_value(
+                &right_predictions,
+                &right_obs,
+                state.params.n_trees,
+                &state.params.leaf_sd,
+                shape,
+                &state.params.response,
+            );
+
+            // Update the tree
             if let Ok((left_index, right_index)) =
                 self.tree
                     .split_node(node_index, feature, split_value, left_value, right_value)
             {
+                // Add new leaves into the expansion nodes
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
+                // Remove the old node as it is now an internal node
                 self.indices.remove_index(node_index);
                 return true;
             }

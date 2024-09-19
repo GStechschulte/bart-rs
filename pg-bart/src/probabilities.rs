@@ -1,6 +1,9 @@
+use ndarray::Array1;
 use rand_distr::{Distribution, Normal, Uniform};
 
-use rand::{self, Rng};
+use rand::{self, thread_rng, Rng};
+
+use crate::pgbart::Response;
 
 pub struct TreeProbabilities {
     pub normal: Normal<f64>,
@@ -14,7 +17,7 @@ pub struct TreeProbabilities {
 impl TreeProbabilities {
     /// Sample a boolean flag indicating if a node should be split or not.
     ///
-    /// The deeper a leaf node, the larger the prior probability it will
+    /// The deeper a leaf node, the greater the prior probability it will
     /// remain a leaf node.
     pub fn sample_expand_flag(&self, depth: usize) -> bool {
         let mut rng = rand::thread_rng();
@@ -25,16 +28,44 @@ impl TreeProbabilities {
         res
     }
 
-    // Sample a new value for a leaf node
-    pub fn sample_leaf_value(&self, mu: f64, kfactor: f64) -> f64 {
-        let mut rng = rand::thread_rng();
+    /// Sample a Gaussian distributed value for a leaf node.
+    pub fn sample_leaf_value(
+        &self,
+        mu: &Vec<f64>,
+        obs: &Vec<f64>,
+        m: usize,
+        leaf_sd: &f64,
+        shape: usize,
+        response: &Response,
+    ) -> f64 {
+        let mut rng = thread_rng();
+        let norm = self.normal.sample(&mut rng) * leaf_sd;
 
-        let norm = self.normal.sample(&mut rng) * kfactor;
-
-        norm + mu
+        match (mu.len(), response) {
+            (0, _) => 0.0,
+            (1, _) => {
+                let mu_mean = mu[0] / m as f64 + norm;
+                mu_mean
+            }
+            (2, Response::Constant) | (2, Response::Linear) => {
+                let mu_mean = mu.iter().sum::<f64>() / (2.0 * m as f64) + norm;
+                mu_mean
+            }
+            (len @ 3.., Response::Constant) => {
+                let mu_mean = mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm;
+                mu_mean
+            }
+            (len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
+        }
     }
 
-    // Sample the index of a feature to split on
+    // pub fn fast_linear_fit(&self, mu: &Vec<f64, obs: &Vec<f64>) {
+    //     todo!("Implement!!!")
+    // }
+
+    /// Sample the index of a feature to split on.
+    ///
+    /// Sampling of splitting variables is proportional to `alpha_vec`.
     pub fn sample_split_index(&self) -> usize {
         let mut rng = rand::thread_rng();
 
@@ -48,7 +79,11 @@ impl TreeProbabilities {
         self.splitting_probs.len() - 1
     }
 
-    // Sample a boolean flag indicating if a node should be split or not
+    /// Sample a split value from a vector of candidate points.
+    ///
+    /// Candidate points are sampled by first creating a Uniform distribution
+    /// over the indices of the `candidates` vector. Then, a random index is
+    /// sampled from this distribution.
     pub fn sample_split_value(&self, candidates: &Vec<f64>) -> Option<f64> {
         let mut rng = rand::thread_rng();
 
