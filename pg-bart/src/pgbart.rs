@@ -11,8 +11,8 @@ use rand_distr::{Distribution, Normal, Uniform};
 
 use crate::data::PyData;
 use crate::math;
+use crate::ops::TreeSamplingOps;
 use crate::particle::{Particle, ParticleParams};
-use crate::probabilities::TreeProbabilities;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -78,7 +78,7 @@ impl PgBartSettings {
 pub struct PgBartState {
     pub data: Box<dyn PyData>,
     pub params: PgBartSettings,
-    pub probabilities: TreeProbabilities,
+    pub tree_ops: TreeSamplingOps,
     pub predictions: Array1<f64>,
     pub particles: Vec<Particle>,
     pub variable_inclusion: Vec<usize>,
@@ -133,10 +133,10 @@ impl PgBartState {
 
         let N = Normal::new(0.0, std).unwrap();
 
-        // Tree probabilities
+        // Tree tree_ops
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
         let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
-        let probabilities = TreeProbabilities {
+        let tree_ops = TreeSamplingOps {
             alpha_vec,
             splitting_probs,
             alpha: params.alpha,
@@ -148,7 +148,7 @@ impl PgBartState {
         PgBartState {
             data,
             params,
-            probabilities,
+            tree_ops,
             predictions,
             particles,
             variable_inclusion,

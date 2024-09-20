@@ -5,7 +5,7 @@ use rand::{self, thread_rng, Rng};
 
 use crate::pgbart::Response;
 
-pub struct TreeProbabilities {
+pub struct TreeSamplingOps {
     pub normal: Normal<f64>,
     pub uniform: Uniform<f64>,
     pub alpha_vec: Vec<f64>,
@@ -14,7 +14,7 @@ pub struct TreeProbabilities {
     pub beta: f64,
 }
 
-impl TreeProbabilities {
+impl TreeSamplingOps {
     /// Sample a boolean flag indicating if a node should be split or not.
     ///
     /// The deeper a leaf node, the greater the prior probability it will

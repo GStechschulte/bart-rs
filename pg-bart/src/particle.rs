@@ -143,19 +143,19 @@ impl Particle {
         };
 
         let node_index_depth = self.tree.node_depth(node_index);
-        let expand = state.probabilities.sample_expand_flag(node_index_depth);
+        let expand = state.tree_ops.sample_expand_flag(node_index_depth);
         if !expand {
             return false;
         }
 
         let samples = &self.indices.data_indices[node_index];
-        let feature = state.probabilities.sample_split_index();
+        let feature = state.tree_ops.sample_split_index();
 
         // For each index i in samples, access the 2d array X at position [i, feature]
         // where i represents a row and feature represents a column, and collect the results
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
 
-        if let Some(split_value) = state.probabilities.sample_split_value(&feature_values) {
+        if let Some(split_value) = state.tree_ops.sample_split_value(&feature_values) {
             // Index of left and right samples
             let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
                 .iter()
@@ -175,10 +175,10 @@ impl Particle {
             let left_obs = left_samples.iter().map(|&i| X[[i, feature]]).collect();
             let right_obs: Vec<_> = right_samples.iter().map(|&i| X[[i, feature]]).collect();
 
-            // TODO: Use state.params.shape once implemented...
+            // TODO: Use state.params.shape once implemented
             let shape = 1 as usize;
 
-            let left_value = state.probabilities.sample_leaf_value(
+            let left_value = state.tree_ops.sample_leaf_value(
                 &left_predictions,
                 &left_obs,
                 state.params.n_trees,
@@ -186,7 +186,7 @@ impl Particle {
                 shape,
                 &state.params.response,
             );
-            let right_value = state.probabilities.sample_leaf_value(
+            let right_value = state.tree_ops.sample_leaf_value(
                 &right_predictions,
                 &right_obs,
                 state.params.n_trees,
