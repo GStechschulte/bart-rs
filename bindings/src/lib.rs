@@ -30,7 +30,7 @@ fn initialize(
     leaf_sd: f64,
     batch: (f64, f64),
 ) -> StateWrapper {
-    let data = ExternalData::new(X, y);
+    let data = ExternalData::new(X, y, logp);
     let data = Box::new(data);
     let response = Response::from_str(&response).unwrap();
     let params = PgBartSettings::new(
