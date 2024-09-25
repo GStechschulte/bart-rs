@@ -186,9 +186,14 @@ impl PgBartState {
 
         let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
 
+        println!("mu: {}", mu);
+        println!("tree_ids: {:?}", tree_ids);
+
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         for (iter, tree_id) in tree_ids.enumerate() {
+            println!("tree_id: {}, iter: {}", tree_id, iter);
+
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
@@ -196,26 +201,49 @@ impl PgBartState {
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
+            println!("\nSum of trees (predictions)");
+            println!("----------------------");
+            println!("old_predictions: {}", old_predictions);
+            println!("predictions_minus_old: {}", predictions_minus_old);
+
             // Initialize local particles. These local particles are to be mutated (grown)
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
 
-            // Grow each particle (skipping the first) until the probability that the node
-            // in this particle will remain a leaf node is "high"
-            while !local_particles.iter().all(|p| p.finished()) {
-                for p in local_particles.iter_mut().skip(1) {
+            println!("Number of local particles: {}", local_particles.len());
+
+            // Create a vector of mutable references to unfinished particles
+            let mut unfinished_particles: Vec<&mut Particle> = local_particles
+                .iter_mut()
+                .skip(1) // Skip the first particle
+                .filter(|p| !p.finished()) // Only include unfinished particles
+                .collect();
+
+            // Grow each particle until the probability that the node in this particle
+            // will remain a leaf node is "high"
+            while !unfinished_particles.is_empty() {
+                // Only retain the elements for which the closure returns true
+                unfinished_particles.retain_mut(|p| {
+                    // Attempt to grow the particle
                     if p.grow(&self.data.X(), self) {
                         self.update_weight(p, &old_predictions);
                     }
-                }
+                    // Return unfinished particles
+                    !p.finished()
+                });
             }
+
             // Normalize log-likelihood and resample particles
             let normalized_weights = self.normalize_weights(&local_particles);
+            println!("normalized weights: {:?}", normalized_weights);
+
             let mut resampled_particles =
                 self.resample_particles(&mut local_particles, &normalized_weights);
 
             // Normalize log-likelihood again and select a particle to replace M_i
             let normalized_weights = self.normalize_weights(&resampled_particles);
+            println!("resampled normalized weights: {:?}", normalized_weights);
+
             let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
 
             // Update the sum of trees
@@ -223,10 +251,8 @@ impl PgBartState {
             let updated_preds = predictions_minus_old + new_particle_preds;
             self.predictions = updated_preds;
 
-            // Replace particle (tree) M_i with the new particle
+            // Replace tree M_i with the new particle
             self.particles[tree_id] = new_particle;
-
-            println!("Done...");
 
             // TODO: !!!!
             // Update variable inclusion
@@ -266,6 +292,7 @@ impl PgBartState {
         // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.model_logp(preds);
+        println!("log likelihood: {}", log_likelihood);
         particle.weight.reset(log_likelihood);
     }
 
@@ -303,7 +330,7 @@ impl PgBartState {
         for &idx in &resampled_indices {
             // swap_remove does not preserve ordering but this is okay since we don't use
             // particles (local_particles) after calling resample_particles
-            resampled_particles.push(particles.swap_remove(idx + 1));
+            resampled_particles.push(particles.swap_remove(idx));
         }
 
         resampled_particles

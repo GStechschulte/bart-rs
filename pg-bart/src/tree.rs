@@ -46,10 +46,10 @@ impl DecisionTree {
     /// ```
     /// let mut tree = DecisionTree::new(0.5);
     /// ```
-    pub fn new(init_value: f64) -> Self {
+    pub fn new(init_value: f64) -> DecisionTree {
         DecisionTree {
-            feature: Vec::new(),
-            threshold: Vec::new(),
+            feature: vec![0],     // Initialize with a placeholder feature
+            threshold: vec![0.0], // Initialize with a placeholder threshold
             value: vec![init_value],
         }
     }
@@ -80,8 +80,12 @@ impl DecisionTree {
         }
     }
 
+    /// Check whether the passed index is a leaf.
+    ///
+    /// Assumes that leaf nodes have a feature index of 0 and a threshold of 0.0.
+    /// This is consistent with the initializing of new leaf nodes in the add_node method
     pub fn is_leaf(&self, index: usize) -> bool {
-        self.left_child(index).is_none() && self.right_child(index).is_none()
+        index >= self.feature.len() || (self.feature[index] == 0 && self.threshold[index] == 0.0)
     }
 
     // Leaf nodes do not have a threshold value
@@ -112,7 +116,7 @@ impl DecisionTree {
         left_value: f64,
         right_value: f64,
     ) -> Result<(usize, usize), TreeError> {
-        if node_index >= self.feature.len() {
+        if node_index >= self.value.len() {
             return Err(TreeError::InvalidNodeIndex);
         }
 
@@ -120,23 +124,35 @@ impl DecisionTree {
             return Err(TreeError::NonLeafSplit);
         }
 
-        // TODO: We should be using the `add_node` method here
-        let left_child_index = node_index * 2 + 1;
-        let right_child_index = node_index * 2 + 2;
-
         // Update the current node
+        // self.feature.insert(node_index, feature);
+        // self.threshold.insert(node_index, threshold);
         self.feature[node_index] = feature;
         self.threshold[node_index] = threshold;
 
-        // Add left child
-        self.feature.insert(left_child_index, 0); // Placeholder feature
-        self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
-        self.value.insert(left_child_index, left_value);
+        // If after updating...
+        // if node_index >= self.feature.len() {
+        //     println!("self.feature.len(): {}", self.feature.len());
+        //     return Err(TreeError::InvalidNodeIndex);
+        // }
 
-        // Add right child
-        self.feature.insert(right_child_index, 0); // Placeholder feature
-        self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
-        self.value.insert(right_child_index, right_value);
+        // TODO: We should be using the `add_node` method here?
+
+        let left_child_index = self.add_node(0, 0.0, left_value);
+        let right_child_index = self.add_node(0, 0.0, right_value);
+
+        // let left_child_index = node_index * 2 + 1;
+        // let right_child_index = node_index * 2 + 2;
+
+        // // Add left child
+        // self.feature.insert(left_child_index, 0); // Placeholder feature
+        // self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
+        // self.value.insert(left_child_index, left_value);
+
+        // // Add right child
+        // self.feature.insert(right_child_index, 0); // Placeholder feature
+        // self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
+        // self.value.insert(right_child_index, right_value);
 
         Ok((left_child_index, right_child_index))
     }

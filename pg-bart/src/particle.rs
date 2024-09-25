@@ -38,6 +38,11 @@ pub struct SampleIndices {
 }
 
 impl SampleIndices {
+    /// Creates a new...
+    ///
+    /// `leaf_nodes` and `expansion_nodes` start from 0 as this is the
+    /// index of the root node, i.e when creating a new Particle, only
+    /// the root node is eligible to be grown.
     fn new(num_samples: usize) -> Self {
         SampleIndices {
             leaf_nodes: HashSet::from([0]),
@@ -46,6 +51,7 @@ impl SampleIndices {
         }
     }
 
+    /// Adds the index of a leaf to be expanded.
     fn add_index(&mut self, idx: usize, data_rows: Vec<usize>) {
         self.leaf_nodes.insert(idx);
         self.expansion_nodes.push_back(idx);
@@ -135,80 +141,113 @@ impl Particle {
 
     // TODO: Handle different `split_rules` and `response`
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
+        println!("\nGrowing tree");
+        println!("------------");
+
+        println!("Start. expansion nodes: {:?}", self.indices.expansion_nodes);
+
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
             None => {
+                println!("Unable to grow leaf node: no expansion index available");
                 return false;
             }
         };
 
+        println!("Growing node_index: {}", node_index);
+
         let node_index_depth = self.tree.node_depth(node_index);
-        let expand = state.tree_ops.sample_expand_flag(node_index_depth);
-        if !expand {
+
+        println!("node_index_depth: {}", node_index_depth);
+
+        if !state.tree_ops.sample_expand_flag(node_index_depth) {
+            println!("Node not selected for expansion");
             return false;
         }
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_index();
+        println!("Splitting on feature: {}", feature);
 
-        // For each index i in samples, access the 2d array X at position [i, feature]
-        // where i represents a row and feature represents a column, and collect the results
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
+        println!("Available splitting values: {:?}", feature_values);
 
-        if let Some(split_value) = state.tree_ops.sample_split_value(&feature_values) {
-            // Index of left and right samples
-            let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
-                .iter()
-                .partition(|&&i| X[[i, feature]] <= split_value);
+        let split_value = match state.tree_ops.sample_split_value(&feature_values) {
+            Some(value) => value,
+            None => {
+                println!("No valid split value found");
+                return false;
+            }
+        };
 
-            // Extract predictions for left and right leaf nodes
-            let left_predictions = left_samples
+        let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
+            .iter()
+            .partition(|&&i| X[[i, feature]] <= split_value);
+
+        if left_samples.is_empty() || right_samples.is_empty() {
+            println!("Invalid split: one side is empty");
+            self.indices.expansion_nodes.push_back(node_index);
+            return false;
+        }
+
+        let (left_predictions, right_predictions): (Vec<f64>, Vec<f64>) = (
+            left_samples.iter().map(|&i| state.predictions[i]).collect(),
+            right_samples
                 .iter()
                 .map(|&i| state.predictions[i])
-                .collect::<Vec<f64>>();
-            let right_predictions = right_samples
-                .iter()
-                .map(|&i| state.predictions[i])
-                .collect::<Vec<f64>>();
+                .collect(),
+        );
 
-            // Extract the observations that belong to the left and right leaf nodes
-            let left_obs = left_samples.iter().map(|&i| X[[i, feature]]).collect();
-            let right_obs: Vec<_> = right_samples.iter().map(|&i| X[[i, feature]]).collect();
+        let (left_obs, right_obs): (Vec<f64>, Vec<f64>) = (
+            left_samples.iter().map(|&i| X[[i, feature]]).collect(),
+            right_samples.iter().map(|&i| X[[i, feature]]).collect(),
+        );
 
-            // TODO: Use state.params.shape once implemented
-            let shape = 1 as usize;
+        println!("Left obs: {:?}", left_obs);
+        println!("Right obs: {:?}", right_obs);
 
-            let left_value = state.tree_ops.sample_leaf_value(
-                &left_predictions,
-                &left_obs,
-                state.params.n_trees,
-                &state.params.leaf_sd,
-                shape,
-                &state.params.response,
-            );
-            let right_value = state.tree_ops.sample_leaf_value(
-                &right_predictions,
-                &right_obs,
-                state.params.n_trees,
-                &state.params.leaf_sd,
-                shape,
-                &state.params.response,
-            );
+        // TODO: Use state.params.shape once implemented
+        let shape = 1;
 
-            // Update the tree
-            if let Ok((left_index, right_index)) =
-                self.tree
-                    .split_node(node_index, feature, split_value, left_value, right_value)
-            {
-                // Add new leaves into the expansion nodes
+        println!("\nSampling leaf values");
+        println!("----------------------");
+
+        let left_value = state.tree_ops.sample_leaf_value(
+            &left_predictions,
+            &left_obs,
+            state.params.n_trees,
+            &state.params.leaf_sd,
+            shape,
+            &state.params.response,
+        );
+        let right_value = state.tree_ops.sample_leaf_value(
+            &right_predictions,
+            &right_obs,
+            state.params.n_trees,
+            &state.params.leaf_sd,
+            shape,
+            &state.params.response,
+        );
+
+        println!("Sampled left value: {}", left_value);
+        println!("Sampled right value: {}", right_value);
+
+        match self
+            .tree
+            .split_node(node_index, feature, split_value, left_value, right_value)
+        {
+            Ok((left_index, right_index)) => {
+                self.indices.remove_index(node_index);
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
-                // Remove the old node as it is now an internal node
-                self.indices.remove_index(node_index);
+                println!("self.expansion_nodes: {:?}", self.indices.expansion_nodes);
                 return true;
             }
+            Err(e) => {
+                println!("Failed to split node {}: {:?}", node_index, e);
+                return false;
+            }
         }
-        false
     }
 
     pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
@@ -222,6 +261,10 @@ impl Particle {
                 }
             }
         }
+
+        println!("\nPredict");
+        println!("----------------------");
+        println!("particle predictions: {:?}", predictions);
 
         predictions
     }
