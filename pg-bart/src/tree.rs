@@ -125,34 +125,12 @@ impl DecisionTree {
         }
 
         // Update the current node
-        // self.feature.insert(node_index, feature);
-        // self.threshold.insert(node_index, threshold);
         self.feature[node_index] = feature;
         self.threshold[node_index] = threshold;
 
-        // If after updating...
-        // if node_index >= self.feature.len() {
-        //     println!("self.feature.len(): {}", self.feature.len());
-        //     return Err(TreeError::InvalidNodeIndex);
-        // }
-
-        // TODO: We should be using the `add_node` method here?
-
+        // Add new left and right leaf nodes
         let left_child_index = self.add_node(0, 0.0, left_value);
         let right_child_index = self.add_node(0, 0.0, right_value);
-
-        // let left_child_index = node_index * 2 + 1;
-        // let right_child_index = node_index * 2 + 2;
-
-        // // Add left child
-        // self.feature.insert(left_child_index, 0); // Placeholder feature
-        // self.threshold.insert(left_child_index, 0.0); // Placeholder threshold
-        // self.value.insert(left_child_index, left_value);
-
-        // // Add right child
-        // self.feature.insert(right_child_index, 0); // Placeholder feature
-        // self.threshold.insert(right_child_index, 0.0); // Placeholder threshold
-        // self.value.insert(right_child_index, right_value);
 
         Ok((left_child_index, right_child_index))
     }
