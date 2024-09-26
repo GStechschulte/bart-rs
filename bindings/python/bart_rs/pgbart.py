@@ -11,6 +11,7 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
+import ctypes
 
 from typing import List, Optional, Tuple, Union
 
@@ -86,7 +87,7 @@ class PGBART(ArrayStepShared):
 
         shape = initial_values[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
-    
+
         # Set trees_shape (dim for separate tree structures)
         # and leaves_shape (dim for leaf node values)
         # One of the two is always one, the other equal to self.shape
@@ -108,11 +109,22 @@ class PGBART(ArrayStepShared):
         else:
             self.leaf_sd *= self.bart.Y.std() / self.m**0.5
 
+        # Get the user data address
+        if isinstance(self.compiled_pymc_model.user_data, ctypes.Array):
+            user_data_address = ctypes.cast(self.compiled_pymc_model.user_data, ctypes.c_void_p).value
+        else:
+            # If it's a numpy array or other object, get its data pointer
+            user_data_address = self.compiled_pymc_model.user_data.ctypes.data_as(ctypes.c_void_p).value
+
+        print(f"user_data_address: {user_data_address}")
+
         # Initialize the Rust sampler
         self.state = initialize(
             X=self.X,
             y=self.bart.Y,
             logp=self.compiled_pymc_model.compiled_logp_func.address,
+            n_dim=self.compiled_pymc_model._n_dim,
+            user_data=user_data_address,
             alpha=self.bart.alpha,
             beta=self.bart.beta,
             split_prior=self.alpha_vec,
@@ -127,13 +139,13 @@ class PGBART(ArrayStepShared):
         super().__init__(vars, self.compiled_pymc_model.shared_data)
 
     def astep(self, _):
-        
+
         # t0 = perf_counter()
-        
+
         # self.logp_wrapper.update_persistent_arrays()
-        
+
         # t1 = perf_counter()
-        
+
         sum_trees = step(self.state, self.tune)
 
         # t2 = perf_counter()

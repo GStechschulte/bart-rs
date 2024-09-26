@@ -44,7 +44,7 @@ impl SampleIndices {
     /// index of the root node, i.e when creating a new Particle, only
     /// the root node is eligible to be grown.
     fn new(num_samples: usize) -> Self {
-        SampleIndices {
+        Self {
             leaf_nodes: HashSet::from([0]),
             expansion_nodes: VecDeque::from([0]),
             data_indices: vec![Vec::from_iter(0..num_samples)],
@@ -83,7 +83,7 @@ pub struct Weight {
 
 impl Weight {
     fn new() -> Self {
-        Weight {
+        Self {
             log_w: 0.0,
             log_likelihood: 0.0,
         }
@@ -131,7 +131,7 @@ impl Particle {
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
 
-        Particle {
+        Self {
             params,
             tree,
             indices,

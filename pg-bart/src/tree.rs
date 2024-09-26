@@ -46,8 +46,8 @@ impl DecisionTree {
     /// ```
     /// let mut tree = DecisionTree::new(0.5);
     /// ```
-    pub fn new(init_value: f64) -> DecisionTree {
-        DecisionTree {
+    pub fn new(init_value: f64) -> Self {
+        Self {
             feature: vec![0],     // Initialize with a placeholder feature
             threshold: vec![0.0], // Initialize with a placeholder threshold
             value: vec![init_value],

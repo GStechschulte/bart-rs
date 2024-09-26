@@ -145,7 +145,7 @@ impl PgBartState {
             uniform: Uniform::new(0.33, 0.75),      // TODO: Should these params. be fixed?
         };
 
-        PgBartState {
+        Self {
             data,
             params,
             tree_ops,
@@ -294,7 +294,8 @@ impl PgBartState {
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
         // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
-        let log_likelihood = self.data.model_logp(preds);
+        // let log_likelihood = self.data.model_logp(preds);
+        let (log_likelihood, gradient) = self.data.evaluate_logp(preds).unwrap();
         println!("log likelihood: {}", log_likelihood);
         particle.weight.reset(log_likelihood);
     }
