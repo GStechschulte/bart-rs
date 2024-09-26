@@ -145,7 +145,7 @@ impl PgBartState {
             uniform: Uniform::new(0.33, 0.75),      // TODO: Should these params. be fixed?
         };
 
-        PgBartState {
+        Self {
             data,
             params,
             tree_ops,
