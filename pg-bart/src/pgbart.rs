@@ -243,12 +243,15 @@ impl PgBartState {
             // Normalize log-likelihood again and select a particle to replace M_i
             let normalized_weights = self.normalize_weights(&resampled_particles);
             println!("resampled normalized weights: {:?}", normalized_weights);
-
             let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
 
             // Update the sum of trees
+            println!("New tree and sum tree predictions");
+            println!("----------------------");
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
+            println!("sum_trees: {:?}", updated_preds);
+
             self.predictions = updated_preds;
 
             // Replace tree M_i with the new particle
@@ -315,23 +318,24 @@ impl PgBartState {
         weights.iter().map(|&w| w / sum_weights).collect()
     }
 
-    /// Uses systematic resampling to sample new Particles.
+    /// Systematic resampling to sample new Particles.
     fn resample_particles(&self, particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
         let num_particles = particles.len();
 
-        // Keep first particle (original tree)
-        let mut resampled_particles: Vec<Particle> = Vec::with_capacity(num_particles);
-        resampled_particles.push(particles.remove(0));
-
-        // Systematic resample all but the first particle
+        // Keep first particle (original tree) and get resampled indices
+        let mut resampled_particles = vec![particles.swap_remove(0)];
         let resampled_indices = self.systematic_resample(&weights[1..], num_particles - 1);
 
-        // Transfer ownership of Particles in particles to resampled_particles
-        for &idx in &resampled_indices {
-            // swap_remove does not preserve ordering but this is okay since we don't use
-            // particles (local_particles) after calling resample_particles
-            resampled_particles.push(particles.swap_remove(idx));
-        }
+        // Collect resampled particles
+        resampled_particles.extend(
+            resampled_indices
+                .into_iter()
+                .filter_map(|idx| (idx < particles.len()).then(|| particles.swap_remove(idx))),
+        );
+
+        // Remove remaining elements (because of the logic inside of .filter_map above) in particles
+        // and add to resampled_particles
+        resampled_particles.extend(particles.drain(..));
 
         resampled_particles
     }
