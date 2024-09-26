@@ -5,7 +5,6 @@ TODO: Attribute nutepie here...
 import dataclasses
 import itertools
 import warnings
-
 from dataclasses import dataclass
 from importlib.util import find_spec
 from math import prod
@@ -21,7 +20,6 @@ from pymc.pytensorf import join_nonshared_inputs, make_shared_replacements
 from numba.core.ccallback import CFunc
 from numba import cfunc, types, njit
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
 
 try:
     from numba.extending import intrinsic
@@ -404,14 +402,18 @@ def compile_pymc_model_numba(model, **kwargs):
         shared_vars[val.name] = val
         seen.add(val)
 
+    print(f"shared_vars: {shared_vars}")
+    print(f"shared_data: {shared_data}")
 
     for val in shared_data.values():
         val.flags.writeable = False
 
     user_data = make_user_data(shared_vars, shared_data)
+    print(f"user_data: {user_data}")
 
     logp_shared_names = [var.name for var in logp_fn_pt.get_shared()]
 
+    print(f"logp_shared_names: {logp_shared_names}")
 
     logp_numba_raw, c_sig = _make_c_logp_func(
         n_dim, logp_fn, user_data, logp_shared_names, shared_data

@@ -186,9 +186,14 @@ impl PgBartState {
 
         let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
 
+        println!("mu: {}", mu);
+        println!("tree_ids: {:?}", tree_ids);
+
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         for (iter, tree_id) in tree_ids.enumerate() {
+            println!("tree_id: {}, iter: {}", tree_id, iter);
+
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
@@ -196,9 +201,16 @@ impl PgBartState {
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
+            println!("\nSum of trees (predictions)");
+            println!("----------------------");
+            println!("old_predictions: {}", old_predictions);
+            println!("predictions_minus_old: {}", predictions_minus_old);
+
             // Initialize local particles. These local particles are to be mutated (grown)
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
+
+            println!("Number of local particles: {}", local_particles.len());
 
             // Create a vector of mutable references to unfinished particles
             let mut unfinished_particles: Vec<&mut Particle> = local_particles
@@ -223,19 +235,22 @@ impl PgBartState {
 
             // Normalize log-likelihood and resample particles
             let normalized_weights = self.normalize_weights(&local_particles);
+            println!("normalized weights: {:?}", normalized_weights);
 
             let mut resampled_particles =
                 self.resample_particles(&mut local_particles, &normalized_weights);
 
             // Normalize log-likelihood again and select a particle to replace M_i
             let normalized_weights = self.normalize_weights(&resampled_particles);
-
+            println!("resampled normalized weights: {:?}", normalized_weights);
             let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
 
             // Update the sum of trees
-
+            println!("New tree and sum tree predictions");
+            println!("----------------------");
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
+            println!("sum_trees: {:?}", updated_preds);
 
             self.predictions = updated_preds;
 
@@ -281,6 +296,7 @@ impl PgBartState {
         let preds = local_preds + &particle.predict(&self.data.X());
         // let log_likelihood = self.data.model_logp(preds);
         let (log_likelihood, gradient) = self.data.evaluate_logp(preds).unwrap();
+        println!("log likelihood: {}", log_likelihood);
         particle.weight.reset(log_likelihood);
     }
 

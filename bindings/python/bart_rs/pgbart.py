@@ -12,7 +12,6 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 import ctypes
-import warnings
 
 from typing import List, Optional, Tuple, Union
 
@@ -33,7 +32,6 @@ from bart_rs.compile_pymc import compile_pymc_model_numba
 
 from bart_rs.bart_rs import initialize, step
 
-warnings.simplefilter(action="ignore", category=FutureWarning)
 
 class PGBART(ArrayStepShared):
     """
@@ -117,6 +115,8 @@ class PGBART(ArrayStepShared):
         else:
             # If it's a numpy array or other object, get its data pointer
             user_data_address = self.compiled_pymc_model.user_data.ctypes.data_as(ctypes.c_void_p).value
+
+        print(f"user_data_address: {user_data_address}")
 
         # Initialize the Rust sampler
         self.state = initialize(
