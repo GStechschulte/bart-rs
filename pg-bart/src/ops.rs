@@ -23,7 +23,7 @@ impl TreeSamplingOps {
         let mut rng = rand::thread_rng();
 
         let p = 1. - (self.alpha * (1. + depth as f64).powf(-self.beta));
-        println!("prob. of remaining a leaf node: {}", p);
+
         let res = p < rng.gen::<f64>();
 
         res
@@ -93,7 +93,7 @@ impl TreeSamplingOps {
         } else {
             let dist = Uniform::<usize>::new(0, candidates.len());
             let idx = dist.sample(&mut rng);
-            println!("Sampled split value: {:?}", candidates[idx]);
+
             Some(candidates[idx])
         }
     }

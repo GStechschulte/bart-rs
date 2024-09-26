@@ -34,12 +34,15 @@ def main():
     data = pd.DataFrame(data={'Feature': X.flatten(), 'Y': Y})
 
     with pm.Model() as model_coal:
-        mu = pmb.BART("mu", X=X[..., None], Y=Y, m=5)
+        mu = pmb.BART("mu", X=X[..., None], Y=Y, m=2)
         y = pm.Normal("y", mu, sigma=1., observed=Y)
-        step = pmb.PGBART([mu], num_particles=3)
+        step = pmb.PGBART([mu], num_particles=2)
 
-    # for _ in range(3):
-    step.astep(1)
+    # for _ in range(50):
+    step.step(1)
+
+
+
 
 if __name__ == "__main__":
     main()

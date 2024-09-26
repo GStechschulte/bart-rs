@@ -141,41 +141,27 @@ impl Particle {
 
     // TODO: Handle different `split_rules` and `response`
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
-        println!("\nGrowing tree");
-        println!("------------");
-
-        println!("Start. expansion nodes: {:?}", self.indices.expansion_nodes);
-
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
             None => {
-                println!("Unable to grow leaf node: no expansion index available");
                 return false;
             }
         };
 
-        println!("Growing node_index: {}", node_index);
-
         let node_index_depth = self.tree.node_depth(node_index);
 
-        println!("node_index_depth: {}", node_index_depth);
-
         if !state.tree_ops.sample_expand_flag(node_index_depth) {
-            println!("Node not selected for expansion");
             return false;
         }
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_index();
-        println!("Splitting on feature: {}", feature);
 
         let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
-        println!("Available splitting values: {:?}", feature_values);
 
         let split_value = match state.tree_ops.sample_split_value(&feature_values) {
             Some(value) => value,
             None => {
-                println!("No valid split value found");
                 return false;
             }
         };
@@ -185,7 +171,6 @@ impl Particle {
             .partition(|&&i| X[[i, feature]] <= split_value);
 
         if left_samples.is_empty() || right_samples.is_empty() {
-            println!("Invalid split: one side is empty");
             self.indices.expansion_nodes.push_back(node_index);
             return false;
         }
@@ -203,14 +188,8 @@ impl Particle {
             right_samples.iter().map(|&i| X[[i, feature]]).collect(),
         );
 
-        println!("Left obs: {:?}", left_obs);
-        println!("Right obs: {:?}", right_obs);
-
         // TODO: Use state.params.shape once implemented
         let shape = 1;
-
-        println!("\nSampling leaf values");
-        println!("----------------------");
 
         let left_value = state.tree_ops.sample_leaf_value(
             &left_predictions,
@@ -229,9 +208,6 @@ impl Particle {
             &state.params.response,
         );
 
-        println!("Sampled left value: {}", left_value);
-        println!("Sampled right value: {}", right_value);
-
         match self
             .tree
             .split_node(node_index, feature, split_value, left_value, right_value)
@@ -240,11 +216,10 @@ impl Particle {
                 self.indices.remove_index(node_index);
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
-                println!("self.expansion_nodes: {:?}", self.indices.expansion_nodes);
+
                 return true;
             }
             Err(e) => {
-                println!("Failed to split node {}: {:?}", node_index, e);
                 return false;
             }
         }
@@ -261,10 +236,6 @@ impl Particle {
                 }
             }
         }
-
-        println!("\nPredict");
-        println!("----------------------");
-        println!("particle predictions: {:?}", predictions);
 
         predictions
     }
