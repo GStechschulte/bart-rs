@@ -370,8 +370,6 @@ def _make_functions(model, *, mode, compute_grad, join_expanded):
         (all_names, all_slices, all_shapes),
     )
 
-
-
 def compile_pymc_model_numba(model, **kwargs):
     if find_spec("numba") is None:
         raise ImportError(
@@ -390,6 +388,7 @@ def compile_pymc_model_numba(model, **kwargs):
         shape_info,
     ) = _make_functions(model, mode="NUMBA", compute_grad=True, join_expanded=True)
 
+    # Numba compiled logp function
     expand_fn = expand_fn_pt.vm.jit_fn
     logp_fn = logp_fn_pt.vm.jit_fn
 
@@ -403,12 +402,19 @@ def compile_pymc_model_numba(model, **kwargs):
         shared_vars[val.name] = val
         seen.add(val)
 
+    print(f"shared_vars: {shared_vars}")
+    print(f"shared_data: {shared_data}")
+
     for val in shared_data.values():
         val.flags.writeable = False
 
     user_data = make_user_data(shared_vars, shared_data)
+    print(f"user_data: {user_data}")
 
     logp_shared_names = [var.name for var in logp_fn_pt.get_shared()]
+
+    print(f"logp_shared_names: {logp_shared_names}")
+
     logp_numba_raw, c_sig = _make_c_logp_func(
         n_dim, logp_fn, user_data, logp_shared_names, shared_data
     )

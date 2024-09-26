@@ -20,6 +20,8 @@ fn initialize(
     X: PyReadonlyArray2<f64>,
     y: PyReadonlyArray1<f64>,
     logp: usize,
+    n_dim: usize,
+    user_data: usize,
     alpha: f64,
     beta: f64,
     split_prior: PyReadonlyArray1<f64>,
@@ -30,7 +32,7 @@ fn initialize(
     leaf_sd: f64,
     batch: (f64, f64),
 ) -> StateWrapper {
-    let data = ExternalData::new(X, y, logp);
+    let data = ExternalData::new(X, y, logp, n_dim, user_data);
     let data = Box::new(data);
     let response = Response::from_str(&response).unwrap();
     let params = PgBartSettings::new(
