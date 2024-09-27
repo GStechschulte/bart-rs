@@ -262,8 +262,6 @@ impl Particle {
             }
         }
 
-        println!("\nPredict");
-        println!("----------------------");
         println!("particle predictions: {:?}", predictions);
 
         predictions

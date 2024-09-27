@@ -105,6 +105,9 @@ impl PgBartState {
     /// let state = PgBartState::new(params, data);
     /// ```
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
+        println!("Init tree");
+        println!("----------------------");
+
         let X = data.X();
         let y = data.y();
 
@@ -145,6 +148,8 @@ impl PgBartState {
             uniform: Uniform::new(0.33, 0.75),      // TODO: Should these params. be fixed?
         };
 
+        println!("leaf_node_value: {}", leaf_value);
+
         Self {
             data,
             params,
@@ -184,7 +189,8 @@ impl PgBartState {
             upper
         };
 
-        let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
+        // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
+        let mu = self.data.y().mean().unwrap();
 
         println!("mu: {}", mu);
         println!("tree_ids: {:?}", tree_ids);
@@ -197,13 +203,13 @@ impl PgBartState {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
+            println!("\nSum of trees (predictions)");
+            println!("----------------------");
             // Compute the sum of trees without the old particle we are attempting to replace
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
-            println!("\nSum of trees (predictions)");
-            println!("----------------------");
-            println!("old_predictions: {}", old_predictions);
+            // println!("old_predictions: {}", old_predictions);
             println!("predictions_minus_old: {}", predictions_minus_old);
 
             // Initialize local particles. These local particles are to be mutated (grown)
@@ -226,7 +232,7 @@ impl PgBartState {
                 unfinished_particles.retain_mut(|p| {
                     // Attempt to grow the particle
                     if p.grow(&self.data.X(), self) {
-                        self.update_weight(p, &old_predictions);
+                        self.update_weight(p, &predictions_minus_old);
                     }
                     // Return unfinished particles
                     !p.finished()
@@ -269,6 +275,9 @@ impl PgBartState {
 
     /// Generate an initial set of particles for _this_ tree.
     fn initialize_particles(&self, sum_trees_noi: &Array1<f64>, mu: f64) -> Vec<Particle> {
+        println!("\nInitializing particles");
+        println!("----------------------");
+
         let X = self.data.X();
         let leaf_value = mu / (self.params.n_trees as f64);
 
@@ -292,9 +301,11 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
+        println!("Updating particle weight");
+        println!("----------------------");
         // To update the weight, the grown Particle needs to make predictions
+        println!("local_preds: {:?}", local_preds);
         let preds = local_preds + &particle.predict(&self.data.X());
-        // let log_likelihood = self.data.model_logp(preds);
         let (log_likelihood, gradient) = self.data.evaluate_logp(preds).unwrap();
         println!("log likelihood: {}", log_likelihood);
         particle.weight.reset(log_likelihood);
