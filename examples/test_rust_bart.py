@@ -33,22 +33,18 @@ def main():
     # Y = np.sin(X) + np.random.normal(0, 0.5, n)
     # data = pd.DataFrame(data={'Feature': X.flatten(), 'Y': Y})
 
+    num_trees = 10
+    num_particles = 5
+
     with pm.Model() as model_coal:
-        mu_ = pmb.BART("mu", X=x_data, Y=y_data, m=50, alpha=0.95, beta=1.5)
+        mu_ = pmb.BART("mu", X=x_data, Y=y_data, m=num_trees, alpha=0.95, beta=2.0)
         # mu = pm.Deterministic("μ", pm.math.exp(mu_))
         y = pm.Normal("y", mu_, sigma=1., observed=y_data)
         # y_pred = pm.Poisson("y_pred", mu=mu, observed=y_data)
 
-        step = pmb.PGBART([mu_], num_particles=10)
+        step = pmb.PGBART([mu_], num_particles=num_particles, batch=(0.1, 0.1))
 
-    for _ in range(100):
-        sum_trees = step.astep(_)
-
-    # sum_trees = step.astep(1)
-    # sum_trees = step.astep(1)
-    # sum_trees = step.astep(1)
-    # sum_trees = step.astep(1)
-    # sum_trees = step.astep(1)
+    sum_trees = step.astep(1)
 
     plt.scatter(x_data, y_data)
     plt.plot(x_data, sum_trees)

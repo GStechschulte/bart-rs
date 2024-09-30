@@ -161,16 +161,16 @@ impl PgBartState {
         }
     }
 
-    /// Runs the Particle Gibbs sampler sequentially for M iterations where M is the number
+    /// Runs the Particle Gibbs sampler sequentially for `M` iterations where `M` is the number
     /// of trees.
     ///
-    /// A single step will initialize a set of particles N, of which one will replace the
-    /// current tree M_i. To decide which particle will replace the current tree, the N
+    /// A single step will initialize a set of particles `N`, of which one will replace the
+    /// current tree `M_i`. To decide which particle will replace the current tree, the `N`
     /// particles are grown until the probability of a leaf node expanding is less than a
     /// random value in the interval [0, 1].
     ///
     /// The grown particles are then resampled according to their log-likelihood, of which
-    /// one is selected to replace the current tree M_i.
+    /// one is selected to replace the current tree `M_i`.
     pub fn step(&mut self) {
         let batch: (usize, usize) = (
             (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize,
@@ -197,8 +197,10 @@ impl PgBartState {
 
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
-        for (iter, tree_id) in tree_ids.enumerate() {
-            println!("tree_id: {}, iter: {}", tree_id, iter);
+        // for (iter, tree_id) in tree_ids.enumerate() {
+        for tree_id in 0..self.params.n_trees {
+            // println!("tree_id: {}, iter: {}", tree_id, iter);
+            println!("tree_id: {}", tree_id);
 
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
@@ -311,23 +313,21 @@ impl PgBartState {
         particle.weight.reset(log_likelihood);
     }
 
-    /// Ensures the weights (log-likelihood) of the Particles sums to 1.
+    /// Normalize Particle weights to be between [0, 1] using the Softmax function.
+    ///
+    /// The Softmax function is implemented using the log-sum-exp trick to ensure
+    /// the normalization of particle weights is numerically stable.
     fn normalize_weights(&self, particles: &[Particle]) -> Vec<f64> {
-        let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w()).collect();
+        let log_w = Array1::from_iter(particles.iter().map(|p| p.weight.log_w()));
+        // Find the maximum weight
+        let log_w_max = log_w.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // Shift log-weights by subtracting the maximum log-weight
+        let log_w_shifted = &log_w - log_w_max;
+        // log-sum-exp to prevent numerical over and under flow
+        let log_sum_exp = log_w_shifted.mapv(|x| x.exp()).sum().ln() + log_w_max;
 
-        let max_log_weight = log_weights
-            .iter()
-            .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
-
-        let weights: Vec<f64> = log_weights
-            .iter()
-            .map(|&w| (w - max_log_weight).exp())
-            .collect();
-
-        let sum_weights: f64 = weights.iter().sum();
-
-        weights.iter().map(|&w| w / sum_weights).collect()
+        // Normalize weights by exponentiating
+        log_w_shifted.mapv(|x| (x - log_sum_exp).exp()).to_vec()
     }
 
     /// Systematic resampling to sample new Particles.

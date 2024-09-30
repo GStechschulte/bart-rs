@@ -240,7 +240,7 @@ impl Particle {
                 self.indices.remove_index(node_index);
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
-                println!("self.expansion_nodes: {:?}", self.indices.expansion_nodes);
+                println!("end. expansion_nodes: {:?}", self.indices.expansion_nodes);
                 return true;
             }
             Err(e) => {
