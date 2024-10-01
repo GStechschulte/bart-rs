@@ -105,9 +105,6 @@ impl PgBartState {
     /// let state = PgBartState::new(params, data);
     /// ```
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
-        println!("Init tree");
-        println!("----------------------");
-
         let X = data.X();
         let y = data.y();
 
@@ -128,15 +125,13 @@ impl PgBartState {
 
         // Standard deviation for binary and continuous data
         let binary = y.iter().all(|v| (*v == 0.0) || (*v == 1.0));
-        let std = if binary {
+        let std: f64 = if binary {
             3.0 / m.powf(0.5)
         } else {
             y.std(1.0)
         };
 
-        let N = Normal::new(0.0, std).unwrap();
-
-        // Tree tree_ops
+        // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
         let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
         let tree_ops = TreeSamplingOps {
@@ -145,10 +140,8 @@ impl PgBartState {
             alpha: params.alpha,
             beta: params.beta,
             normal: Normal::new(0.0, std).unwrap(), // TODO: Should mu be fixed?
-            uniform: Uniform::new(0.33, 0.75),      // TODO: Should these params. be fixed?
+            uniform: Uniform::new(0.0, 1.0),      // TODO: Should these params. be fixed?
         };
-
-        println!("leaf_node_value: {}", leaf_value);
 
         Self {
             data,
@@ -192,33 +185,20 @@ impl PgBartState {
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
         let mu = self.data.y().mean().unwrap();
 
-        println!("mu: {}", mu);
-        println!("tree_ids: {:?}", tree_ids);
-
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         // for (iter, tree_id) in tree_ids.enumerate() {
         for tree_id in 0..self.params.n_trees {
-            // println!("tree_id: {}, iter: {}", tree_id, iter);
-            println!("tree_id: {}", tree_id);
-
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
-            println!("\nSum of trees (predictions)");
-            println!("----------------------");
             // Compute the sum of trees without the old particle we are attempting to replace
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
-            // println!("old_predictions: {}", old_predictions);
-            println!("predictions_minus_old: {}", predictions_minus_old);
-
             // Initialize local particles. These local particles are to be mutated (grown)
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
-
-            println!("Number of local particles: {}", local_particles.len());
 
             // Create a vector of mutable references to unfinished particles
             let mut unfinished_particles: Vec<&mut Particle> = local_particles
@@ -243,22 +223,17 @@ impl PgBartState {
 
             // Normalize log-likelihood and resample particles
             let normalized_weights = self.normalize_weights(&local_particles);
-            println!("normalized weights: {:?}", normalized_weights);
 
             let mut resampled_particles =
                 self.resample_particles(&mut local_particles, &normalized_weights);
 
             // Normalize log-likelihood again and select a particle to replace M_i
             let normalized_weights = self.normalize_weights(&resampled_particles);
-            println!("resampled normalized weights: {:?}", normalized_weights);
             let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
 
             // Update the sum of trees
-            println!("New tree and sum tree predictions");
-            println!("----------------------");
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
-            println!("sum_trees: {:?}", updated_preds);
 
             self.predictions = updated_preds;
 
@@ -277,9 +252,6 @@ impl PgBartState {
 
     /// Generate an initial set of particles for _this_ tree.
     fn initialize_particles(&self, sum_trees_noi: &Array1<f64>, mu: f64) -> Vec<Particle> {
-        println!("\nInitializing particles");
-        println!("----------------------");
-
         let X = self.data.X();
         let leaf_value = mu / (self.params.n_trees as f64);
 
@@ -303,13 +275,10 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
-        println!("Updating particle weight");
-        println!("----------------------");
         // To update the weight, the grown Particle needs to make predictions
-        println!("local_preds: {:?}", local_preds);
         let preds = local_preds + &particle.predict(&self.data.X());
         let (log_likelihood, gradient) = self.data.evaluate_logp(preds).unwrap();
-        println!("log likelihood: {}", log_likelihood);
+
         particle.weight.reset(log_likelihood);
     }
 
@@ -318,16 +287,21 @@ impl PgBartState {
     /// The Softmax function is implemented using the log-sum-exp trick to ensure
     /// the normalization of particle weights is numerically stable.
     fn normalize_weights(&self, particles: &[Particle]) -> Vec<f64> {
-        let log_w = Array1::from_iter(particles.iter().map(|p| p.weight.log_w()));
-        // Find the maximum weight
-        let log_w_max = log_w.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        // Shift log-weights by subtracting the maximum log-weight
-        let log_w_shifted = &log_w - log_w_max;
-        // log-sum-exp to prevent numerical over and under flow
-        let log_sum_exp = log_w_shifted.mapv(|x| x.exp()).sum().ln() + log_w_max;
+        let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w()).collect();
 
-        // Normalize weights by exponentiating
-        log_w_shifted.mapv(|x| (x - log_sum_exp).exp()).to_vec()
+        let max_log_weight = log_weights
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        let weights: Vec<f64> = log_weights
+            .iter()
+            .map(|&w| (w - max_log_weight).exp())
+            .collect();
+
+        let sum_weights: f64 = weights.iter().sum();
+
+        weights.iter().map(|&w| w / sum_weights).collect()
     }
 
     /// Systematic resampling to sample new Particles.
@@ -357,7 +331,7 @@ impl PgBartState {
     ///
     /// Note: adapted from https://github.com/nchopin/particles
     fn systematic_resample(&self, weights: &[f64], num_samples: usize) -> Vec<usize> {
-        // Generate a uniform ranom number and use it to create evenly spaced points
+        // Generate a uniform random number and use it to create evenly spaced points
         let mut rng = rand::thread_rng();
         let u = rng.gen::<f64>() / num_samples as f64;
 
