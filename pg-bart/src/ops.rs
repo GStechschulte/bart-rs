@@ -23,7 +23,7 @@ impl TreeSamplingOps {
         let mut rng = rand::thread_rng();
 
         let p = 1. - (self.alpha * (1. + depth as f64).powf(-self.beta));
-        println!("prob. of remaining a leaf node: {}", p);
+
         let res = p < rng.gen::<f64>();
 
         res
@@ -85,15 +85,16 @@ impl TreeSamplingOps {
     /// Candidate points are sampled by first creating a Uniform distribution
     /// over the indices of the `candidates` vector. Then, a random index is
     /// sampled from this distribution.
-    pub fn sample_split_value(&self, candidates: &Vec<f64>) -> Option<f64> {
-        let mut rng = rand::thread_rng();
-
-        if candidates.len() == 0 {
+    // pub fn sample_split_value(&self, candidates: &Vec<f64>) -> Option<f64> {
+    pub fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
+        if candidates.is_empty() {
             None
         } else {
-            let dist = Uniform::<usize>::new(0, candidates.len());
+            let mut rng = rand::thread_rng();
+            // let dist = Uniform::<usize>::new(0, candidates.len());
+            let dist = Uniform::from(0..candidates.len());
             let idx = dist.sample(&mut rng);
-            println!("Sampled split value: {:?}", candidates[idx]);
+
             Some(candidates[idx])
         }
     }

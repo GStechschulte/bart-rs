@@ -13,6 +13,7 @@
 #   limitations under the License.
 import ctypes
 
+from time import perf_counter
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -99,8 +100,7 @@ class PGBART(ArrayStepShared):
         else:
             self.alpha_vec = self.bart.split_prior
 
-        # TODO: Should these calculations be moved into Rust?
-        # if data is binary
+        # If data is binary
         self.leaf_sd = np.ones((self.trees_shape, self.leaves_shape))
 
         y_unique = np.unique(self.bart.Y)
@@ -115,8 +115,6 @@ class PGBART(ArrayStepShared):
         else:
             # If it's a numpy array or other object, get its data pointer
             user_data_address = self.compiled_pymc_model.user_data.ctypes.data_as(ctypes.c_void_p).value
-
-        print(f"user_data_address: {user_data_address}")
 
         # Initialize the Rust sampler
         self.state = initialize(
@@ -140,14 +138,9 @@ class PGBART(ArrayStepShared):
 
     def astep(self, _):
 
-        # t0 = perf_counter()
-
-        # self.logp_wrapper.update_persistent_arrays()
-
-        # t1 = perf_counter()
-
+        t0 = perf_counter()
         sum_trees = step(self.state, self.tune)
-
-        # t2 = perf_counter()
+        t1 = perf_counter()
+        print(f"time elapsed: {t1 - t0}")
 
         return sum_trees
