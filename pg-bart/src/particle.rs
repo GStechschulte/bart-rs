@@ -13,7 +13,7 @@ pub struct ParticleParams {
 
 impl ParticleParams {
     pub fn new(n_points: usize, n_features: usize, leaf_sd: f64) -> Self {
-        ParticleParams {
+        Self {
             n_points,
             n_features,
             leaf_sd,
@@ -21,7 +21,7 @@ impl ParticleParams {
     }
 
     pub fn with_new_kf(&self, leaf_sd: f64) -> Self {
-        ParticleParams {
+        Self {
             n_points: self.n_points,
             n_features: self.n_features,
             leaf_sd,
@@ -77,8 +77,8 @@ impl SampleIndices {
 
 #[derive(Debug)]
 pub struct Weight {
-    log_w: f64,
-    log_likelihood: f64,
+    pub log_w: f64,
+    pub log_likelihood: f64,
 }
 
 impl Weight {
@@ -99,18 +99,6 @@ impl Weight {
     pub fn update(&mut self, log_likelihood: f64) {
         self.log_w += log_likelihood - self.log_likelihood;
         self.log_likelihood = log_likelihood;
-    }
-
-    pub fn log_w(&self) -> f64 {
-        self.log_w
-    }
-
-    pub fn log_likelihood(&self) -> f64 {
-        self.log_likelihood
-    }
-
-    pub fn set_log_w(&mut self, log_w: f64) {
-        self.log_w = log_w;
     }
 }
 

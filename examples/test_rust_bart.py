@@ -48,11 +48,11 @@ def main():
 
     sum_trees = step.astep(1)
 
-    # idx_sort = np.argsort(X.flatten())
+    idx_sort = np.argsort(X.flatten())
 
-    # plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
-    # plt.plot(X.flatten()[idx_sort], sum_trees[idx_sort], color="black")
-    # plt.show()
+    plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
+    plt.plot(X.flatten()[idx_sort], sum_trees[idx_sort], color="black")
+    plt.show()
 
 if __name__ == "__main__":
     main()

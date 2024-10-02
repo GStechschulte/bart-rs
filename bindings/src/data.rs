@@ -12,8 +12,6 @@ use pg_bart::data::PyData;
 //
 // Use the std::os::raw module to define the Rust type that are guaranteed to
 // have the same representation as the C type
-// type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> std::os::raw::c_double;
-
 type LogpFunc = unsafe extern "C" fn(
     dim: c_uint,
     x: *const c_double,
@@ -61,14 +59,6 @@ impl PyData for ExternalData {
 
     fn y(&self) -> Array1<f64> {
         self.y.clone()
-    }
-
-    fn model_logp(&self, v: Array1<f64>) -> f64 {
-        todo!("Implement")
-        // let logp = self.logp;
-        // let value = unsafe { logp(v.as_ptr(), v.len()) };
-
-        // value
     }
 
     fn evaluate_logp(&self, x: Array1<f64>) -> Result<(f64, Vec<f64>), &'static str> {
