@@ -39,10 +39,22 @@ class CompiledPyMCModel:
     shape_info: Any
     logp_func: Any
     expand_func: Any
+    dims: Optional[dict[str, tuple[str, ...]]]
     _n_dim: int
     _shapes: dict[str, tuple[int, ...]]
-    dims: Optional[dict[str, tuple[str, ...]]]
     _coords: Optional[dict[str, Any]]
+
+    @property
+    def n_dim(self):
+        return self._n_dim
+
+    @property
+    def shapes(self):
+        return self._shapes
+
+    @property
+    def coords(self):
+        return self._coords
 
 
 @intrinsic
