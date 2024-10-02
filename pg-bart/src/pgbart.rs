@@ -140,7 +140,7 @@ impl PgBartState {
             alpha: params.alpha,
             beta: params.beta,
             normal: Normal::new(0.0, std).unwrap(), // TODO: Should mu be fixed?
-            uniform: Uniform::new(0.0, 1.0),      // TODO: Should these params. be fixed?
+            uniform: Uniform::new(0.0, 1.0),        // TODO: Should these params. be fixed?
         };
 
         Self {
@@ -287,7 +287,7 @@ impl PgBartState {
     /// The Softmax function is implemented using the log-sum-exp trick to ensure
     /// the normalization of particle weights is numerically stable.
     fn normalize_weights(&self, particles: &[Particle]) -> Vec<f64> {
-        let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w()).collect();
+        let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w).collect();
 
         let max_log_weight = log_weights
             .iter()
@@ -367,7 +367,7 @@ impl PgBartState {
         particles.swap_remove(index)
     }
 
-    /// Get predictions
+    /// Returns a borrowed reference to predictions.
     pub fn predictions(&self) -> &Array1<f64> {
         &self.predictions
     }
