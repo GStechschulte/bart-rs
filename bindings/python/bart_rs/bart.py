@@ -32,7 +32,8 @@ class BARTRV(RandomVariable):
     """Base class for BART."""
 
     name: str = "BART"
-    ndim_supp = 1
+    signature = "(m,n),(m),(),(),(),(k)->(m)"
+    # ndim_supp = 1
     ndims_params: List[int] = [2, 1, 0, 0, 0, 1]
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("BART", "\\operatorname{BART}")

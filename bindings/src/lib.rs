@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 mod data;
 
 extern crate pg_bart;
@@ -25,7 +27,6 @@ fn initialize(
     alpha: f64,
     beta: f64,
     split_prior: PyReadonlyArray1<f64>,
-    // split_rules: TODO: Implement SplitRules
     response: String,
     n_trees: usize,
     n_particles: usize,

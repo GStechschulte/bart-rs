@@ -14,19 +14,15 @@
 import ctypes
 
 from time import perf_counter
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import numpy as np
-import numpy.typing as npt
 
-from numba import njit
 from pymc.model import Model, modelcontext
-from pymc.pytensorf import inputvars, join_nonshared_inputs, make_shared_replacements
+from pymc.pytensorf import inputvars
 from pymc.step_methods.arraystep import ArrayStepShared
 from pymc.step_methods.compound import Competence
-from pytensor import config
-from pytensor import function as pytensor_function
-from pytensor.tensor.variable import Variable
+from pytensor.graph.basic import Variable
 
 from bart_rs.bart import BARTRV
 from bart_rs.compile_pymc import compile_pymc_model_numba
@@ -55,7 +51,8 @@ class PGBART(ArrayStepShared):
     name = "pgbart"
     default_blocked = False
     generates_stats = True
-    stats_dtypes = [{"variable_inclusion": object, "tune": bool}]
+    # stats_dtypes = [{"variable_inclusion": object, "tune": bool}]
+    stats_dtypes = [{"time_rs": float}]
 
     def __init__(  # noqa: PLR0915
         self,
@@ -69,6 +66,7 @@ class PGBART(ArrayStepShared):
         initial_values = model.initial_point()
         self.compiled_pymc_model = compile_pymc_model_numba(model)
 
+        # Get the instances of the BART random variable from the PyMC model
         if vars is None:
             vars = model.value_vars
         else:
@@ -82,7 +80,6 @@ class PGBART(ArrayStepShared):
         else:
             self.X = self.bart.X
 
-        self.missing_data = np.any(np.isnan(self.X))
         self.m = self.bart.m
         self.response = self.bart.response
 
@@ -141,6 +138,14 @@ class PGBART(ArrayStepShared):
         t0 = perf_counter()
         sum_trees = step(self.state, self.tune)
         t1 = perf_counter()
-        print(f"time elapsed: {t1 - t0}")
+        # print(f"time elapsed: {t1 - t0}")
 
-        return sum_trees
+        return sum_trees, [{"time_rs": t1 - t0}]
+
+    @staticmethod
+    def competence(var, has_grad):
+        """PGBART is only suitable for BART distributions."""
+        dist = getattr(var.owner, "op", None)
+        if isinstance(dist, BARTRV):
+            return Competence.IDEAL
+        return Competence.INCOMPATIBLE
