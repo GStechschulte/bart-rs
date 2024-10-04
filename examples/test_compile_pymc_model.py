@@ -7,8 +7,7 @@ import numpy as np
 from pymc.logprob.transforms import FunctionGraph
 from pymc.model import Model, modelcontext
 from pymc.pytensorf import inputvars, join_nonshared_inputs, make_shared_replacements
-from pytensor import function as pytensor_function
-
+from pytensor.compile.function import function as pytensor_function
 
 from numba import cfunc, types, njit
 
@@ -51,13 +50,14 @@ def test_get_model_logp():
 
     with pm.Model() as simple_model:
         mu = pmb.BART("mu", X=X[..., None], Y=Y, m=5)
-        sigma = pm.HalfNormal("sigma", sigma=1)
-        y = pm.Normal("y", mu, sigma=sigma, observed=Y)
+        # sigma = pm.HalfNormal("sigma", sigma=1)
+        y = pm.Normal("y", mu, sigma=1., observed=Y)
         step = pmb.PGBART([mu], num_particles=3)
 
+    pm.BinaryGibbsMetropolis
     print("\nBART method")
     print("-" * 25)
-    model = modelcontext(simple_model)
+    model = modelcontext(simple_model) # modelcontext captures mu
     vars = model.value_vars
     initial_values = simple_model.initial_point()
     shared = make_shared_replacements(initial_values, vars, simple_model)
@@ -68,7 +68,7 @@ def test_get_model_logp():
 
     out_list, inarray0 = join_nonshared_inputs(initial_values, [model.datalogp], vars, shared)
     function = pytensor_function([inarray0], out_list[0])
-    function.trusst_input = True
+    function.trust_input = True
 
     print(f"logp function: {function}")
 
@@ -76,9 +76,9 @@ def test_get_model_logp():
     init_scale = np.array([initial_values.get("sigma_log__")])
     test_point = np.concatenate((init_mu, init_scale))
 
-    print(f"logp: {function(test_point)}")
+    print(f"logp: {function(init_mu)}")
 
-    print("\nutpie method")
+    print("\nnutpie method")
     print("-" * 25)
 
     compiled_pymc = compile_pymc_model_numba(simple_model)
@@ -98,24 +98,10 @@ def test_get_model_logp():
     print(f"model_vars: {model_vars}")
 
     # logp_func returns the logp and gradient
-    logp_value, gradient = compiled_pymc.logp_func(test_point)
+    logp_value, gradient = compiled_pymc.logp_func(init_mu)
     print(f"init logp: {logp_value}")
 
-
-    print(f"{compiled_pymc.user_data}")
-
-
-    # print(f"{compiled_pymc.compiled_logp_func(test_point)}")
-    # logp_func = logp_wrapper(compiled_pymc)
-
-    # Get the initial point
-    # initial_point = simple_model.initial_point()
-
-    # Evaluate the log probability
-    # logp_value, gradient = logp_func(test_point)
-
-    # print(f"Log probability: {logp_value}")
-    # print(f"Gradient: {gradient}")
+    print(f"shared: {compiled_pymc.shared_data}")
 
 if __name__ == "__main__":
     test_get_model_logp()

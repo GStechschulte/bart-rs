@@ -1,5 +1,6 @@
+#![allow(non_snake_case)]
+
 use core::f64;
-use std::fmt::format;
 use std::str::FromStr;
 
 use ndarray::Array1;
@@ -116,20 +117,12 @@ impl PgBartState {
         let variable_inclusion = vec![0; X.ncols()];
 
         // Particles can grow (mutate)
-        let mut particles = (0..params.n_trees)
+        let particles = (0..params.n_trees)
             .map(|_| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols(), params.leaf_sd);
+                let p_params = ParticleParams::new(X.nrows(), X.ncols());
                 Particle::new(p_params, leaf_value, X.nrows())
             })
             .collect();
-
-        // Standard deviation for binary and continuous data
-        let binary = y.iter().all(|v| (*v == 0.0) || (*v == 1.0));
-        let std: f64 = if binary {
-            3.0 / m.powf(0.5)
-        } else {
-            y.std(1.0)
-        };
 
         // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
@@ -139,8 +132,8 @@ impl PgBartState {
             splitting_probs,
             alpha: params.alpha,
             beta: params.beta,
-            normal: Normal::new(0.0, std).unwrap(), // TODO: Should mu be fixed?
-            uniform: Uniform::new(0.0, 1.0),        // TODO: Should these params. be fixed?
+            normal: Normal::new(0.0, 1.0).unwrap(),
+            uniform: Uniform::new(0.0, 1.0),
         };
 
         Self {
@@ -172,14 +165,14 @@ impl PgBartState {
 
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
-        let batch_size = if self.tune { batch.0 } else { batch.1 };
-        let lower: usize = 0;
-        let upper = (lower as f64 + batch_size as f64).floor() as usize;
-        let tree_ids = lower..upper;
-        let lower = if upper >= self.params.n_trees {
+        let _batch_size = if self.tune { batch.0 } else { batch.1 };
+        let _lower: usize = 0;
+        let _upper = (_lower as f64 + _batch_size as f64).floor() as usize;
+        let _tree_ids = _lower.._upper;
+        let _lower = if _upper >= self.params.n_trees {
             0
         } else {
-            upper
+            _upper
         };
 
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
@@ -187,8 +180,7 @@ impl PgBartState {
 
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
-        // for (iter, tree_id) in tree_ids.enumerate() {
-        for tree_id in 0..self.params.n_trees {
+        for (iter, tree_id) in _tree_ids.enumerate() {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
@@ -259,7 +251,7 @@ impl PgBartState {
         // PgBartState::new(...)
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols(), self.params.leaf_sd);
+                let p_params = ParticleParams::new(X.nrows(), X.ncols());
                 let mut particle = Particle::new(p_params, leaf_value, X.nrows());
 
                 if i == 0 {
@@ -277,7 +269,7 @@ impl PgBartState {
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
         // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
-        let (log_likelihood, gradient) = self.data.evaluate_logp(preds).unwrap();
+        let (log_likelihood, _gradient) = self.data.evaluate_logp(preds).unwrap();
 
         particle.weight.reset(log_likelihood);
     }

@@ -1,4 +1,6 @@
-use ndarray::{s, Array1, Array2};
+#![allow(non_snake_case)]
+
+use ndarray::{Array1, Array2};
 use std::collections::{HashSet, VecDeque};
 
 use crate::{pgbart::PgBartState, tree::DecisionTree};
@@ -8,23 +10,13 @@ use crate::{pgbart::PgBartState, tree::DecisionTree};
 pub struct ParticleParams {
     n_points: usize,
     n_features: usize,
-    leaf_sd: f64,
 }
 
 impl ParticleParams {
-    pub fn new(n_points: usize, n_features: usize, leaf_sd: f64) -> Self {
+    pub fn new(n_points: usize, n_features: usize) -> Self {
         Self {
             n_points,
             n_features,
-            leaf_sd,
-        }
-    }
-
-    pub fn with_new_kf(&self, leaf_sd: f64) -> Self {
-        Self {
-            n_points: self.n_points,
-            n_features: self.n_features,
-            leaf_sd,
         }
     }
 }
@@ -145,8 +137,13 @@ impl Particle {
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_index();
 
-        // TODO: Before calling sample_split_value, filter missing values in `feature_values`
-        let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
+        // Collect the available feature values to sample a split value from
+        // The filter predicate filters out NaNs and Infinite values
+        let feature_values: Vec<f64> = samples
+            .iter()
+            .map(|&i| X[[i, feature]])
+            .filter(|&x| x.is_finite())
+            .collect();
 
         let split_value = match state.tree_ops.sample_split_value(&feature_values) {
             Some(value) => value,

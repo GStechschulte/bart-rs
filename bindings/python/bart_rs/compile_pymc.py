@@ -15,7 +15,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
-from pytensor import function as pytensor_fn
+from pytensor.compile.function import function as pytensor_fn
+# from pytensor import function as pytensor_fn
 from pymc.pytensorf import join_nonshared_inputs, make_shared_replacements
 from numba.core.ccallback import CFunc
 from numba import cfunc, types, njit
@@ -280,6 +281,7 @@ def _make_functions(model, *, mode, compute_grad, join_expanded):
 
     value_vars = [model.rvs_to_values[var] for var in model.free_RVs]
 
+    # In the previous Rust BART implementation, model.datalogp was called...
     logp = model.logp()
 
     rewrites = ["canonicalize", "stabilize"]
