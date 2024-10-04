@@ -1,4 +1,3 @@
-use ndarray::Array1;
 use rand_distr::{Distribution, Normal, Uniform};
 
 use rand::{self, thread_rng, Rng};
@@ -32,11 +31,11 @@ impl TreeSamplingOps {
     /// Sample a Gaussian distributed value for a leaf node.
     pub fn sample_leaf_value(
         &self,
-        mu: &Vec<f64>,
-        obs: &Vec<f64>,
+        mu: &[f64],
+        _obs: &[f64],
         m: usize,
         leaf_sd: &f64,
-        shape: usize,
+        _shape: usize,
         response: &Response,
     ) -> f64 {
         let mut rng = thread_rng();
