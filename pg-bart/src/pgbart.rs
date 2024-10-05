@@ -165,14 +165,14 @@ impl PgBartState {
 
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
-        let _batch_size = if self.tune { batch.0 } else { batch.1 };
-        let _lower: usize = 0;
-        let _upper = (_lower as f64 + _batch_size as f64).floor() as usize;
-        let _tree_ids = _lower.._upper;
-        let _lower = if _upper >= self.params.n_trees {
+        let batch_size = if self.tune { batch.0 } else { batch.1 };
+        let lower: usize = 0;
+        let upper = (lower as f64 + batch_size as f64).floor() as usize;
+        let tree_ids = lower..upper;
+        let lower = if upper >= self.params.n_trees {
             0
         } else {
-            _upper
+            upper
         };
 
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
@@ -180,7 +180,8 @@ impl PgBartState {
 
         // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
-        for (iter, tree_id) in _tree_ids.enumerate() {
+        for tree_id in tree_ids {
+            // for tree_id in 0..self.params.n_trees {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 

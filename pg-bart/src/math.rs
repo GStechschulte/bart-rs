@@ -1,4 +1,4 @@
-pub fn normalized_cumsum(v: &Vec<f64>) -> Vec<f64> {
+pub fn normalized_cumsum(v: &[f64]) -> Vec<f64> {
     let total: f64 = v.iter().sum();
     let ret: Vec<f64> = v
         .iter()
