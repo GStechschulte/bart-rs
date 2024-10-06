@@ -203,11 +203,10 @@ impl Particle {
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
 
-                return true;
+                true
             }
-            Err(e) => {
-                return false;
-            }
+            // TODO: Proper error handling
+            Err(_e) => false,
         }
     }
 

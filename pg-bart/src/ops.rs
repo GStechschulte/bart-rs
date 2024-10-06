@@ -20,12 +20,9 @@ impl TreeSamplingOps {
     /// remain a leaf node.
     pub fn sample_expand_flag(&self, depth: usize) -> bool {
         let mut rng = rand::thread_rng();
-
         let p = 1. - (self.alpha * (1. + depth as f64).powf(-self.beta));
 
-        let res = p < rng.gen::<f64>();
-
-        res
+        p < rng.gen::<f64>()
     }
 
     /// Sample a Gaussian distributed value for a leaf node.
@@ -43,19 +40,14 @@ impl TreeSamplingOps {
 
         match (mu.len(), response) {
             (0, _) => 0.0,
-            (1, _) => {
-                let mu_mean = mu[0] / m as f64 + norm;
-                mu_mean
-            }
+            (1, _) => mu[0] / m as f64 + norm,
             (2, Response::Constant) | (2, Response::Linear) => {
-                let mu_mean = mu.iter().sum::<f64>() / (2.0 * m as f64) + norm;
-                mu_mean
+                mu.iter().sum::<f64>() / (2.0 * m as f64) + norm
             }
             (len @ 3.., Response::Constant) => {
-                let mu_mean = mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm;
-                mu_mean
+                mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm
             }
-            (len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
+            (_len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
         }
     }
 
@@ -84,13 +76,11 @@ impl TreeSamplingOps {
     /// Candidate points are sampled by first creating a Uniform distribution
     /// over the indices of the `candidates` vector. Then, a random index is
     /// sampled from this distribution.
-    // pub fn sample_split_value(&self, candidates: &Vec<f64>) -> Option<f64> {
     pub fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
         if candidates.is_empty() {
             None
         } else {
             let mut rng = rand::thread_rng();
-            // let dist = Uniform::<usize>::new(0, candidates.len());
             let dist = Uniform::from(0..candidates.len());
             let idx = dist.sample(&mut rng);
 
