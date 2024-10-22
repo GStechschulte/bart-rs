@@ -33,3 +33,8 @@ a location beyond the end of an array.
 
 In `bart-rs` if a function or method can fail, it will have a return type `Result<T, E>`. The Result type indicates
 possible failure.
+
+In particular, there are ... areas of possible failure.
+
+- **Growing of particles.** During the growing of particles there can be particle growth `Ok(true)`, no particle growth, `Ok(false)`
+and unsuccessful particle growth as a result of some error being raised `Err(ParticleError)`.
