@@ -82,7 +82,7 @@ impl Weight {
     }
 
     // Sets the log-weight and log-likelihood of this particle to a fixed value
-    pub fn reset(&mut self, log_likelihood: f64) {
+    pub fn set(&mut self, log_likelihood: f64) {
         self.log_w = log_likelihood;
         self.log_likelihood = log_likelihood;
     }
