@@ -4,6 +4,7 @@ use rand::{self, thread_rng, Rng};
 
 use crate::pgbart::Response;
 
+#[derive(Clone)]
 pub struct TreeSamplingOps {
     pub normal: Normal<f64>,
     pub uniform: Uniform<f64>,

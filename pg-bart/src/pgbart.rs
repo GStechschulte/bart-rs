@@ -2,13 +2,13 @@
 
 use core::f64;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
 
 use ndarray::Array1;
-
-use rand::{thread_rng, Rng};
-
 use rand::distributions::WeightedIndex;
+use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal, Uniform};
+use rayon::prelude::*;
 
 use crate::data::PyData;
 use crate::math;
@@ -178,70 +178,129 @@ impl PgBartState {
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
         let mu = self.data.y().mean().unwrap();
 
-        // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
-        // Modify each tree sequentially
-        for tree_id in tree_ids {
-            // for tree_id in 0..self.params.n_trees {
-            // Immutable borrow of the particle (aka tree) to modify
-            let selected_particle = &self.particles[tree_id];
+        let data = Arc::new(self.data.clone());
+        let tree_ops = Arc::new(self.tree_ops.clone());
+        let predictions = Arc::new(Mutex::new(self.predictions.clone()));
 
-            // Compute the sum of trees without the old particle we are attempting to replace
-            let old_predictions = selected_particle.predict(&self.data.X());
-            let predictions_minus_old = &self.predictions - &old_predictions;
+        let updated_particles: Vec<_> = tree_ids
+            .into_par_iter()
+            .map(|tree_id| {
+                let selected_particle = &self.particles[tree_id];
+                let old_predictions = selected_particle.predict(data.X());
 
-            // Initialize local particles. These local particles are to be mutated (grown)
-            // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
-            let mut local_particles = self.initialize_particles(&old_predictions, mu);
+                let predictions_lock = Arc::clone(&predictions);
+                let predictions_minus_old = {
+                    let predictions = predictions_lock.lock().unwrap();
+                    &*predictions - &old_predictions
+                };
 
-            // Create a vector of mutable references to unfinished particles
-            let mut unfinished_particles: Vec<&mut Particle> = local_particles
-                .iter_mut()
-                .skip(1) // Skip the first particle
-                .filter(|p| !p.finished()) // Only include unfinished particles
-                .collect();
+                let mut local_particles = self.initialize_particles(&old_predictions, mu);
 
-            // Grow each particle until the probability that the node in this particle
-            // will remain a leaf node is "high"
-            while !unfinished_particles.is_empty() {
-                // Only retain the elements for which the closure returns true
-                unfinished_particles.retain_mut(|p| {
-                    // Attempt to grow the particle
-                    if p.grow(&self.data.X(), self) {
-                        self.update_weight(p, &predictions_minus_old);
-                    }
-                    // Return unfinished particles
-                    !p.finished()
-                });
-            }
+                // Grow particles
+                let mut unfinished_particles: Vec<&mut Particle> = local_particles
+                    .iter_mut()
+                    .skip(1)
+                    .filter(|p| !p.finished())
+                    .collect();
 
-            // Normalize log-likelihood and resample particles
-            let normalized_weights = self.normalize_weights(&local_particles);
+                while !unfinished_particles.is_empty() {
+                    unfinished_particles.retain_mut(|p| {
+                        if p.grow(data.X(), self) {
+                            self.update_weight(p, &predictions_minus_old);
+                        }
+                        !p.finished()
+                    });
+                }
 
-            let mut resampled_particles =
-                self.resample_particles(&mut local_particles, &normalized_weights);
+                // Normalize and resample
+                let normalized_weights = self.normalize_weights(&local_particles);
+                let mut resampled_particles =
+                    self.resample_particles(&mut local_particles, &normalized_weights);
 
-            // Normalize log-likelihood again and select a particle to replace M_i
-            let normalized_weights = self.normalize_weights(&resampled_particles);
-            let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
+                let normalized_weights = self.normalize_weights(&resampled_particles);
+                let new_particle =
+                    self.select_particle(&mut resampled_particles, &normalized_weights);
 
-            // Update the sum of trees
-            let new_particle_preds = &new_particle.predict(&self.data.X());
-            let updated_preds = predictions_minus_old + new_particle_preds;
+                // Update predictions
+                let new_particle_preds = new_particle.predict(data.X());
+                let mut predictions = predictions_lock.lock().unwrap();
+                *predictions = &*predictions - &old_predictions + &new_particle_preds;
 
-            self.predictions = updated_preds;
+                (tree_id, new_particle)
+            })
+            .collect();
 
-            // Replace tree M_i with the new particle
+        // Update particles and predictions
+        for (tree_id, new_particle) in updated_particles {
             self.particles[tree_id] = new_particle;
-
-            // TODO: !!!!
-            // Update variable inclusion
-            // self.update_variable_inclusion(&new_particle.tree)
-
-            // if self.tune {
-            //     self.update_probabilities();
-            //     }
         }
+        self.predictions = Arc::try_unwrap(predictions).unwrap().into_inner().unwrap();
     }
+
+    // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
+    // Modify each tree sequentially
+    // for tree_id in tree_ids {
+    //     // for tree_id in 0..self.params.n_trees {
+    //     // Immutable borrow of the particle (aka tree) to modify
+    //     let selected_particle = &self.particles[tree_id];
+
+    //     // Compute the sum of trees without the old particle we are attempting to replace
+    //     let old_predictions = selected_particle.predict(&self.data.X());
+    //     let predictions_minus_old = &self.predictions - &old_predictions;
+
+    //     // Initialize local particles. These local particles are to be mutated (grown)
+    //     // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
+    //     let mut local_particles = self.initialize_particles(&old_predictions, mu);
+
+    //     // Create a vector of mutable references to unfinished particles
+    //     let mut unfinished_particles: Vec<&mut Particle> = local_particles
+    //         .iter_mut()
+    //         .skip(1) // Skip the first particle
+    //         .filter(|p| !p.finished()) // Only include unfinished particles
+    //         .collect();
+
+    //     // Grow each particle until the probability that the node in this particle
+    //     // will remain a leaf node is "high"
+    //     while !unfinished_particles.is_empty() {
+    //         // Only retain the elements for which the closure returns true
+    //         unfinished_particles.retain_mut(|p| {
+    //             // Attempt to grow the particle
+    //             if p.grow(&self.data.X(), self) {
+    //                 self.update_weight(p, &predictions_minus_old);
+    //             }
+    //             // Return unfinished particles
+    //             !p.finished()
+    //         });
+    //     }
+
+    //     // Normalize log-likelihood and resample particles
+    //     let normalized_weights = self.normalize_weights(&local_particles);
+
+    //     let mut resampled_particles =
+    //         self.resample_particles(&mut local_particles, &normalized_weights);
+
+    //     // Normalize log-likelihood again and select a particle to replace M_i
+    //     let normalized_weights = self.normalize_weights(&resampled_particles);
+    //     let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
+
+    //     // Update the sum of trees
+    //     let new_particle_preds = &new_particle.predict(&self.data.X());
+    //     let updated_preds = predictions_minus_old + new_particle_preds;
+
+    //     self.predictions = updated_preds;
+
+    //     // Replace tree M_i with the new particle
+    //     self.particles[tree_id] = new_particle;
+
+    // TODO: !!!!
+    // Update variable inclusion
+    // self.update_variable_inclusion(&new_particle.tree)
+
+    // if self.tune {
+    //     self.update_probabilities();
+    //     }
+    //     }
+    // }
 
     /// Generate an initial set of particles for _this_ tree.
     fn initialize_particles(&self, sum_trees_noi: &Array1<f64>, mu: f64) -> Vec<Particle> {
