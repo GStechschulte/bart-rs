@@ -39,6 +39,66 @@ def logp_wrapper(compiled_model):
 
     return wrapper
 
+def compile_model(model):
+    print("\nnutpie method")
+    print("-" * 25)
+
+    compiled_pymc = compile_pymc_model_numba(model)
+
+    # Both compiled funcs have a pointer to an address...
+    print(f"compiled_logp_fn.address: {compiled_pymc.compiled_logp_func.address}")
+    print(f"compiled_expand_func.address: {compiled_pymc.compiled_expand_func.address}")
+
+    print(f"compiled_logp_fn: {compiled_pymc.compiled_logp_func}")
+    print(f"compiled_expand_func: {compiled_pymc.compiled_expand_func}")
+    print(f"logp_fn: {compiled_pymc.logp_func}")
+
+    initial_point = model.initial_point()
+    print(f"initial_point: {initial_point}")
+
+    model_vars = model.value_vars
+    print(f"model_vars: {model_vars}")
+
+    # initial_values = model.initial_point()
+    # init_mu = np.array(initial_values.get("mu", None))
+    # init_scale = np.array([initial_values.get("sigma_log__")])
+    # test_point = np.concatenate((init_mu, init_scale))
+
+    # logp_func returns the logp and gradient
+    # logp_value, gradient = compiled_pymc.logp_func(init_mu)
+    # print(f"init logp: {logp_value}")
+
+    print(f"shared: {compiled_pymc.shared_data}")
+
+
+def test_asymmetric_laplace():
+    bmi = pd.read_csv(pm.get_data("bmi.csv"))
+    y = bmi.bmi.values
+    X = bmi.age.values[:, None]
+    y_stack = np.stack([bmi.bmi.values] * 3)
+    quantiles = np.array([[0.1, 0.5, 0.9]]).T
+
+    with pm.Model() as model:
+        mu = pmb.BART("mu", X, y, shape=(3, 7294))
+        sigma = pm.HalfNormal("σ", 5)
+        obs = pm.AsymmetricLaplace("obs", mu=mu, b=sigma, q=quantiles, observed=y_stack)
+
+    return compile_model(model)
+
+def test_compile_negative_binomial_model():
+    bikes = pd.read_csv(pm.get_data("bikes.csv"))
+
+    X = bikes[["hour", "temperature", "humidity", "workingday"]].values
+    Y = bikes["count"].values
+
+    with pm.Model() as model_bikes:
+        alpha = pm.Exponential("alpha", 1)
+        mu = pmb.BART("mu", X, np.log(Y))
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y, shape=mu.shape)
+        step = pmb.PGBART([mu], num_particles=3)
+
+    return compile_model(model_bikes)
+
 
 def test_get_model_logp():
 
@@ -54,7 +114,6 @@ def test_get_model_logp():
         y = pm.Normal("y", mu, sigma=1., observed=Y)
         step = pmb.PGBART([mu], num_particles=3)
 
-    pm.BinaryGibbsMetropolis
     print("\nBART method")
     print("-" * 25)
     model = modelcontext(simple_model) # modelcontext captures mu
@@ -103,5 +162,10 @@ def test_get_model_logp():
 
     print(f"shared: {compiled_pymc.shared_data}")
 
+def main():
+
+    test_compile_negative_binomial_model()
+    test_asymmetric_laplace()
+
 if __name__ == "__main__":
-    test_get_model_logp()
+    main()

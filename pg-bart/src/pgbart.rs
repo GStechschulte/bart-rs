@@ -272,7 +272,7 @@ impl PgBartState {
         let preds = local_preds + &particle.predict(&self.data.X());
         let (log_likelihood, _gradient) = self.data.evaluate_logp(preds).unwrap();
 
-        particle.weight.reset(log_likelihood);
+        particle.weight.set(log_likelihood);
     }
 
     /// Normalize Particle weights to be between [0, 1] using the Softmax function.
