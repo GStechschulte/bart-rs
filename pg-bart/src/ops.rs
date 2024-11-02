@@ -70,21 +70,4 @@ impl TreeSamplingOps {
 
         self.splitting_probs.len() - 1
     }
-
-    /// Sample a split value from a vector of candidate points.
-    ///
-    /// Candidate points are sampled by first creating a Uniform distribution
-    /// over the indices of the `candidates` vector. Then, a random index is
-    /// sampled from this distribution.
-    pub fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
-        if candidates.is_empty() {
-            None
-        } else {
-            let mut rng = rand::thread_rng();
-            let dist = Uniform::from(0..candidates.len());
-            let idx = dist.sample(&mut rng);
-
-            Some(candidates[idx])
-        }
-    }
 }
