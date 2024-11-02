@@ -1,7 +1,6 @@
 #![allow(non_snake_case)]
 
 mod data;
-mod split_rules;
 
 extern crate pg_bart;
 
