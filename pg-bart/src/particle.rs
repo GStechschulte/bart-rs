@@ -21,7 +21,7 @@ impl ParticleParams {
     }
 }
 
-/// SampleIndices tracks which training sample belong to node i
+/// SampleIndices tracks which training sample belong to node `i`.
 #[derive(Debug)]
 pub struct SampleIndices {
     leaf_nodes: HashSet<usize>,       // Set of leaf node indices
@@ -119,7 +119,7 @@ impl Particle {
         }
     }
 
-    // TODO: Handle different `split_rules` and `response`
+    // TODO: Handle different `response`
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
@@ -136,6 +136,7 @@ impl Particle {
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_feature();
+        // Select the rule to be used sample a split value from _this_ feature
         let rule = &state.params.split_rules[feature];
 
         // Collect the available feature values to sample a split value from
@@ -157,18 +158,6 @@ impl Particle {
         // Divide candidate points based on the split value into left and right samples
         let (left_samples, right_samples): (Vec<usize>, Vec<usize>) =
             rule.divide_dyn(&feature_values, &split_value);
-
-        // let split_value = match state.tree_ops.sample_split_value(&feature_values) {
-        //     Some(value) => value,
-        //     None => {
-        //         return false;
-        //     }
-        // };
-
-        // TODO: Move this op into the `divide_dyn` method
-        // let (left_samples, right_samples): (Vec<usize>, Vec<usize>) = samples
-        //     .iter()
-        //     .partition(|&&i| X[[i, feature]] <= split_value);
 
         if left_samples.is_empty() || right_samples.is_empty() {
             self.indices.expansion_nodes.push_back(node_index);

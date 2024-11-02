@@ -4,95 +4,109 @@ use std::any::Any;
 use std::f64;
 use std::iter::Iterator;
 
-// Helper trait for dynamic dispatch
+use crate::tree::SplitValue;
+
+/// Interface for split strategies.
 pub trait SplitRule: Send + Sync {
     fn as_any(&self) -> &dyn Any;
-    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<Box<dyn Any + Send>>;
-    fn divide_dyn(&self, candidates: &dyn Any, split_value: &dyn Any) -> (Vec<usize>, Vec<usize>);
-}
-
-// Main trait with associated types
-pub trait SplitRuleTyped: Send + Sync {
-    type Candidate;
-    type SplitValue: Send + 'static;
-
-    fn get_split_value(&self, candidates: &[Self::Candidate]) -> Option<Self::SplitValue>;
-    fn divide(
+    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue>;
+    fn divide_dyn(
         &self,
-        candidates: &[Self::Candidate],
-        split_value: &Self::SplitValue,
+        candidates: &dyn Any,
+        split_value: &SplitValue,
     ) -> (Vec<usize>, Vec<usize>);
 }
 
-// Implement the dynamic trait for any type implementing the typed trait
-impl<T: SplitRuleTyped + 'static> SplitRule for T {
+/// Standard continuous split rule. Pick a pivot value and split
+/// depending on if variable is smaller or greater than the value picked.
+pub struct ContinuousSplit;
+
+impl SplitRule for ContinuousSplit {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
-    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<Box<dyn Any + Send>> {
-        let candidates = candidates.downcast_ref::<Vec<T::Candidate>>()?.as_slice();
-        self.get_split_value(candidates)
-            .map(|value| Box::new(value) as Box<dyn Any + Send>)
+    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue> {
+        if let Some(candidates) = candidates.downcast_ref::<Vec<f64>>() {
+            if candidates.len() > 1 {
+                let idx = rand::thread_rng().gen_range(0..candidates.len());
+                Some(SplitValue::Float(candidates[idx]))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
-    fn divide_dyn(&self, candidates: &dyn Any, split_value: &dyn Any) -> (Vec<usize>, Vec<usize>) {
-        if let (Some(candidates), Some(split_value)) = (
-            candidates.downcast_ref::<Vec<T::Candidate>>(),
-            split_value.downcast_ref::<T::SplitValue>(),
-        ) {
-            self.divide(candidates.as_slice(), split_value)
+    fn divide_dyn(
+        &self,
+        candidates: &dyn Any,
+        split_value: &SplitValue,
+    ) -> (Vec<usize>, Vec<usize>) {
+        if let Some(candidates) = candidates.downcast_ref::<Vec<f64>>() {
+            match split_value {
+                SplitValue::Float(threshold) => {
+                    let (left, right): (Vec<_>, Vec<_>) =
+                        (0..candidates.len()).partition(|&idx| candidates[idx] <= *threshold);
+                    (left, right)
+                }
+                SplitValue::Integer(threshold) => {
+                    let threshold = *threshold as f64;
+                    let (left, right): (Vec<_>, Vec<_>) =
+                        (0..candidates.len()).partition(|&idx| candidates[idx] <= threshold);
+                    (left, right)
+                }
+            }
         } else {
             (vec![], vec![])
         }
     }
 }
 
-pub struct ContinuousSplit;
-
-impl SplitRuleTyped for ContinuousSplit {
-    type Candidate = f64;
-    type SplitValue = f64;
-
-    fn get_split_value(&self, candidates: &[Self::Candidate]) -> Option<Self::SplitValue> {
-        if candidates.len() > 1 {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
-        } else {
-            None
-        }
-    }
-
-    fn divide(
-        &self,
-        candidates: &[Self::Candidate],
-        split_value: &Self::SplitValue,
-    ) -> (Vec<usize>, Vec<usize>) {
-        (0..candidates.len()).partition(|&idx| candidates[idx] <= *split_value)
-    }
-}
-
+/// Choose a single categorical value and branch on it if the variable is that value or not.
 pub struct OneHotSplit;
 
-impl SplitRuleTyped for OneHotSplit {
-    type Candidate = i32;
-    type SplitValue = i32;
+impl SplitRule for OneHotSplit {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 
-    fn get_split_value(&self, candidates: &[Self::Candidate]) -> Option<Self::SplitValue> {
-        if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
+    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue> {
+        if let Some(candidates) = candidates.downcast_ref::<Vec<i32>>() {
+            if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
+                let idx = rand::thread_rng().gen_range(0..candidates.len());
+                Some(SplitValue::Integer(candidates[idx]))
+            } else {
+                None
+            }
         } else {
             None
         }
     }
 
-    fn divide(
+    fn divide_dyn(
         &self,
-        candidates: &[Self::Candidate],
-        split_value: &Self::SplitValue,
+        candidates: &dyn Any,
+        split_value: &SplitValue,
     ) -> (Vec<usize>, Vec<usize>) {
-        (0..candidates.len()).partition(|&idx| candidates[idx] == *split_value)
+        if let Some(candidates) = candidates.downcast_ref::<Vec<i32>>() {
+            match split_value {
+                SplitValue::Integer(threshold) => {
+                    let (left, right): (Vec<_>, Vec<_>) =
+                        (0..candidates.len()).partition(|&idx| candidates[idx] == *threshold);
+                    (left, right)
+                }
+                SplitValue::Float(threshold) => {
+                    let threshold = *threshold as i32;
+                    let (left, right): (Vec<_>, Vec<_>) =
+                        (0..candidates.len()).partition(|&idx| candidates[idx] == threshold);
+                    (left, right)
+                }
+            }
+        } else {
+            (vec![], vec![])
+        }
     }
 }
 

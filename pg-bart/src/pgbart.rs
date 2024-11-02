@@ -14,7 +14,7 @@ use crate::data::PyData;
 use crate::math;
 use crate::ops::TreeSamplingOps;
 use crate::particle::{Particle, ParticleParams};
-use crate::split_rules::{SplitRule, SplitRuleTyped};
+use crate::split_rules::SplitRule;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -186,7 +186,6 @@ impl PgBartState {
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
         let mu = self.data.y().mean().unwrap();
 
-        // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         for tree_id in tree_ids {
             // for tree_id in 0..self.params.n_trees {
