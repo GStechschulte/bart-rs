@@ -83,7 +83,7 @@ impl DecisionTree {
     /// Check whether the passed index is a leaf.
     ///
     /// Assumes that leaf nodes have a feature index of 0 and a threshold of 0.0.
-    /// This is consistent with the initializing of new leaf nodes in the add_node method
+    /// This is consistent with the initializing of new leaf nodes in the `add_node` method
     pub fn is_leaf(&self, index: usize) -> bool {
         index >= self.feature.len() || (self.feature[index] == 0 && self.threshold[index] == 0.0)
     }

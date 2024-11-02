@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod data;
+mod split_rules;
 
 extern crate pg_bart;
 
@@ -10,6 +11,7 @@ use crate::data::ExternalData;
 
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::pgbart::{PgBartSettings, PgBartState, Response};
+use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRule};
 use pyo3::prelude::*;
 
 #[pyclass(unsendable)]
@@ -27,15 +29,33 @@ fn initialize(
     alpha: f64,
     beta: f64,
     split_prior: PyReadonlyArray1<f64>,
+    split_rules: Vec<String>,
     response: String,
     n_trees: usize,
     n_particles: usize,
     leaf_sd: f64,
     batch: (f64, f64),
-) -> StateWrapper {
+) -> PyResult<StateWrapper> {
     let data = ExternalData::new(X, y, logp, n_dim, user_data);
     let data = Box::new(data);
     let response = Response::from_str(&response).unwrap();
+
+    let mut rules = Vec::new();
+
+    for rule in split_rules {
+        let split: Box<dyn SplitRule> = match rule.as_str() {
+            "ContinuousSplit" => Box::new(ContinuousSplit),
+            "OneHotSplit" => Box::new(OneHotSplit),
+            _ => {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "Unknown split type: {}",
+                    rule
+                )))
+            }
+        };
+        rules.push(split);
+    }
+
     let params = PgBartSettings::new(
         n_trees,
         n_particles,
@@ -45,10 +65,11 @@ fn initialize(
         batch,
         split_prior.to_vec().unwrap(),
         response,
+        rules,
     );
     let state = PgBartState::new(params, data);
 
-    StateWrapper { state }
+    Ok(StateWrapper { state })
 }
 
 #[pyfunction]
@@ -62,9 +83,18 @@ fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) -> &'py Py
     py_array
 }
 
+// #[pymodule]
+// fn bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+//     m.add_function(wrap_pyfunction!(initialize, m)?)?;
+//     m.add_function(wrap_pyfunction!(step, m)?)?;
+//     // m.add_class::<ContinuousSplit>()?;
+//     Ok(())
+// }
+
 #[pymodule]
-fn bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn bart_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
+
     Ok(())
 }

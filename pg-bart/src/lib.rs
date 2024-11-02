@@ -3,5 +3,5 @@ pub mod math;
 pub mod ops;
 pub mod particle;
 pub mod pgbart;
-pub mod split;
+pub mod split_rules;
 pub mod tree;

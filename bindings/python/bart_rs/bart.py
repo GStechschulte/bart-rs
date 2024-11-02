@@ -122,8 +122,7 @@ class BART(Distribution):
         beta: float = 2.0,
         response: str = "constant",
         split_prior: Optional[npt.NDArray[np.float_]] = None,
-        # TODO: !!!
-        # split_rules: Optional[List[SplitRule]] = None,
+        split_rules: Optional[List] = None,
         separate_trees: Optional[bool] = False,
         **kwargs,
     ):
@@ -155,8 +154,7 @@ class BART(Distribution):
                 "alpha": alpha,
                 "beta": beta,
                 "split_prior": split_prior,
-                # TODO: !!!
-                # "split_rules": split_rules,
+                "split_rules": split_rules,
                 "separate_trees": separate_trees,
             },
         )()
