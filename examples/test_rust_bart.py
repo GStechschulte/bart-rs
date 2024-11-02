@@ -44,19 +44,19 @@ def main():
             random_seed=42,
             )
 
-    # y_hat = idata["posterior"]["mu"].mean(("chain", "draw"))
-    # std_hat = idata["posterior"]["mu"].std(("chain", "draw"))
-    # idx_sort = np.argsort(X.flatten())
-    # plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
-    # plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
-    # plt.fill_between(
-    #     X.flatten()[idx_sort],
-    #     y_hat[idx_sort] + std_hat[idx_sort] * 2,
-    #     y_hat[idx_sort] - std_hat[idx_sort] * 2,
-    #     color="grey",
-    #     alpha=0.25
-    # )
-    # plt.show()
+    y_hat = idata["posterior"]["mu"].mean(("chain", "draw"))
+    std_hat = idata["posterior"]["mu"].std(("chain", "draw"))
+    idx_sort = np.argsort(X.flatten())
+    plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
+    plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
+    plt.fill_between(
+        X.flatten()[idx_sort],
+        y_hat[idx_sort] + std_hat[idx_sort] * 2,
+        y_hat[idx_sort] - std_hat[idx_sort] * 2,
+        color="grey",
+        alpha=0.25
+    )
+    plt.show()
 
     # sum_trees = step.astep(1)
     # idx_sort = np.argsort(X.flatten())
