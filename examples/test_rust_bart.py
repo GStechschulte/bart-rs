@@ -10,7 +10,6 @@ import pymc as pm
 
 import bart_rs as pmb
 
-
 RANDOM_SEED = 8457
 RNG = np.random.RandomState(RANDOM_SEED)
 
@@ -26,10 +25,18 @@ def main():
     num_particles = 10
 
     with pm.Model() as model_coal:
-        mu_ = pmb.BART("mu", X=X[..., None], Y=Y, m=num_trees, alpha=0.95, beta=2.0)
+
+        mu_ = pmb.BART(
+            "mu",
+            X=X[..., None],
+            Y=Y,
+            m=num_trees,
+            split_rules=["ContinuousSplit"],
+            alpha=0.95,
+            beta=2.0
+        )
+
         y = pm.Normal("y", mu_, sigma=1., observed=Y)
-        # idata = pm.sample(tune=300, draws=1_000, random_seed=RANDOM_SEED)
-        # step = pmb.PGBART([mu_], num_particles=num_particles, batch=(0.1, 0.1))
         idata = pm.sample(
             tune=300,
             draws=500,

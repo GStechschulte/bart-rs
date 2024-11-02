@@ -97,6 +97,13 @@ class PGBART(ArrayStepShared):
         else:
             self.alpha_vec = self.bart.split_prior
 
+        if self.bart.split_rules:
+            self.split_rules = self.bart.split_rules
+        else:
+            self.split_rules = ["ContinuousSplit"] * self.X.shape[1]
+
+        print(self.split_rules)
+
         # If data is binary
         self.leaf_sd = np.ones((self.trees_shape, self.leaves_shape))
 
@@ -123,6 +130,7 @@ class PGBART(ArrayStepShared):
             alpha=self.bart.alpha,
             beta=self.bart.beta,
             split_prior=self.alpha_vec,
+            split_rules=self.split_rules,
             response=self.bart.response,
             n_trees=self.bart.m,
             n_particles=num_particles,

@@ -16,6 +16,7 @@ dependencies = [
  "numpy",
  "pg-bart",
  "pyo3",
+ "rand",
 ]
 
 [[package]]

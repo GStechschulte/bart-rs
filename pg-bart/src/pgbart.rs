@@ -14,6 +14,7 @@ use crate::data::PyData;
 use crate::math;
 use crate::ops::TreeSamplingOps;
 use crate::particle::{Particle, ParticleParams};
+use crate::split_rules::SplitRule;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -38,7 +39,11 @@ impl FromStr for Response {
     }
 }
 
-// PgBartSetting are used to initialize a new PgBartState
+/// PgBartSetting are used to initialize a new PgBartState
+///
+/// The type of `split_rules` is a vector of types that implement the
+/// `SplitRule` trait. This is a trait object as the elements in the
+/// vector may not be homogeneous.
 pub struct PgBartSettings {
     pub n_trees: usize,
     pub n_particles: usize,
@@ -48,6 +53,7 @@ pub struct PgBartSettings {
     pub batch: (f64, f64),
     pub init_alpha_vec: Vec<f64>,
     pub response: Response,
+    pub split_rules: Vec<Box<dyn SplitRule>>,
 }
 
 impl PgBartSettings {
@@ -60,6 +66,7 @@ impl PgBartSettings {
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
         response: Response,
+        split_rules: Vec<Box<dyn SplitRule>>,
     ) -> Self {
         Self {
             n_trees,
@@ -70,6 +77,7 @@ impl PgBartSettings {
             batch,
             init_alpha_vec,
             response,
+            split_rules,
         }
     }
 }
@@ -178,7 +186,6 @@ impl PgBartState {
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
         let mu = self.data.y().mean().unwrap();
 
-        // TODO: Use Rayon for parallel processing (would need to refactor to use Arc types...)
         // Modify each tree sequentially
         for tree_id in tree_ids {
             // for tree_id in 0..self.params.n_trees {

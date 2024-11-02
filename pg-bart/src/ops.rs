@@ -58,7 +58,7 @@ impl TreeSamplingOps {
     /// Sample the index of a feature to split on.
     ///
     /// Sampling of splitting variables is proportional to `alpha_vec`.
-    pub fn sample_split_index(&self) -> usize {
+    pub fn sample_split_feature(&self) -> usize {
         let mut rng = rand::thread_rng();
 
         let p = rng.gen::<f64>();

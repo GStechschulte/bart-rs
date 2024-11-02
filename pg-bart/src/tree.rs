@@ -2,9 +2,33 @@ use core::fmt;
 use std::cmp::Ordering;
 
 #[derive(Debug)]
+pub enum SplitValue {
+    Float(f64),
+    Integer(i32),
+}
+
+impl SplitValue {
+    fn compare(&self, other: &SplitValue) -> Ordering {
+        match (self, other) {
+            (SplitValue::Float(a), SplitValue::Float(b)) => {
+                a.partial_cmp(b).unwrap_or(Ordering::Equal)
+            }
+            (SplitValue::Integer(a), SplitValue::Integer(b)) => a.cmp(b),
+            // Convert integers to floats for mixed comparisons
+            (SplitValue::Float(a), SplitValue::Integer(b)) => {
+                a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal)
+            }
+            (SplitValue::Integer(a), SplitValue::Float(b)) => {
+                (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct DecisionTree {
     pub feature: Vec<usize>,
-    pub threshold: Vec<f64>,
+    pub threshold: Vec<SplitValue>,
     pub value: Vec<f64>,
 }
 
@@ -48,13 +72,13 @@ impl DecisionTree {
     /// ```
     pub fn new(init_value: f64) -> Self {
         Self {
-            feature: vec![0],     // Initialize with a placeholder feature
-            threshold: vec![0.0], // Initialize with a placeholder threshold
+            feature: vec![0],                        // Initialize with a placeholder feature
+            threshold: vec![SplitValue::Float(0.0)], // Initialize with a placeholder threshold
             value: vec![init_value],
         }
     }
 
-    pub fn add_node(&mut self, feature: usize, threshold: f64, value: f64) -> usize {
+    pub fn add_node(&mut self, feature: usize, threshold: SplitValue, value: f64) -> usize {
         let node_id = self.feature.len();
         self.feature.push(feature);
         self.threshold.push(threshold);
@@ -80,23 +104,15 @@ impl DecisionTree {
         }
     }
 
-    /// Check whether the passed index is a leaf.
+    /// Check whether the passed index is a leaf node.
     ///
-    /// Assumes that leaf nodes have a feature index of 0 and a threshold of 0.0.
-    /// This is consistent with the initializing of new leaf nodes in the add_node method
+    /// An index is a leaf node if both of its potential children are outside
+    /// the valid array bounds.
     pub fn is_leaf(&self, index: usize) -> bool {
-        index >= self.feature.len() || (self.feature[index] == 0 && self.threshold[index] == 0.0)
-    }
-
-    // Leaf nodes do not have a threshold value
-    pub fn get_leaf_nodes(&self) -> Vec<usize> {
-        let mut leaf_nodes = Vec::new();
-        for (index, threshold) in self.threshold.iter().enumerate() {
-            if *threshold == 0.0 {
-                leaf_nodes.push(index);
-            }
-        }
-        leaf_nodes
+        // index >= self.feature.len() || (self.feature[index] == 0 && self.threshold[index] == 0.0)
+        let left_child = 2 * index + 1;
+        let right_child = 2 * index + 2;
+        left_child >= self.feature.len() || right_child >= self.feature.len()
     }
 
     pub fn node_depth(&self, index: usize) -> usize {
@@ -112,7 +128,7 @@ impl DecisionTree {
         &mut self,
         node_index: usize,
         feature: usize,
-        threshold: f64,
+        threshold: SplitValue,
         left_value: f64,
         right_value: f64,
     ) -> Result<(usize, usize), TreeError> {
@@ -129,21 +145,20 @@ impl DecisionTree {
         self.threshold[node_index] = threshold;
 
         // Add new left and right leaf nodes
-        let left_child_index = self.add_node(0, 0.0, left_value);
-        let right_child_index = self.add_node(0, 0.0, right_value);
+        let left_child_index = self.add_node(0, SplitValue::Float(0.0), left_value);
+        let right_child_index = self.add_node(0, SplitValue::Float(0.0), right_value);
 
         Ok((left_child_index, right_child_index))
     }
 
-    pub fn predict(&self, sample: &[f64]) -> f64 {
+    pub fn predict(&self, sample: &[SplitValue]) -> f64 {
         let mut node = 0;
         loop {
             if self.is_leaf(node) {
                 return self.value[node];
             }
             let feature = self.feature[node];
-            let threshold = self.threshold[node];
-            node = match sample[feature].partial_cmp(&threshold).unwrap() {
+            node = match sample[feature].compare(&self.threshold[node]) {
                 Ordering::Less => self.left_child(node).unwrap(),
                 _ => self.right_child(node).unwrap(),
             };
