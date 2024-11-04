@@ -121,12 +121,17 @@ impl Particle {
 
     // TODO: Handle different `response`
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
+        println!("Step method");
+        println!("-------------------------");
+        println!("start. expansion nodes: {:?}", self.indices.expansion_nodes);
+
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
             None => {
                 return false;
             }
         };
+        println!("available splitting indices: {:?}", node_index);
 
         let node_index_depth = self.tree.node_depth(node_index);
 
@@ -146,6 +151,7 @@ impl Particle {
             .map(|&i| X[[i, feature]])
             .filter(|&x| x.is_finite())
             .collect();
+        println!("available splitting values: {:?}", feature_values);
 
         // Sample a split value from a vector of candidate points
         let split_value = match rule.get_split_value_dyn(&feature_values) {
@@ -154,6 +160,7 @@ impl Particle {
                 return false;
             }
         };
+        println!("split_value: {:?}", split_value);
 
         // Divide candidate points based on the split value into left and right samples
         let (left_samples, right_samples): (Vec<usize>, Vec<usize>) =
@@ -195,6 +202,11 @@ impl Particle {
             &state.params.leaf_sd,
             shape,
             &state.params.response,
+        );
+
+        println!(
+            "Draw leaf values: left = {}, right = {}",
+            left_value, right_value
         );
 
         match self
