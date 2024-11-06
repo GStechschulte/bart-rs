@@ -14,7 +14,7 @@ use crate::data::PyData;
 use crate::math;
 use crate::ops::TreeSamplingOps;
 use crate::particle::{Particle, ParticleParams};
-use crate::split_rules::SplitRule;
+use crate::split_rules::SplitRuleType;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -53,7 +53,7 @@ pub struct PgBartSettings {
     pub batch: (f64, f64),
     pub init_alpha_vec: Vec<f64>,
     pub response: Response,
-    pub split_rules: Vec<Box<dyn SplitRule>>,
+    pub split_rules: Vec<SplitRuleType>,
 }
 
 impl PgBartSettings {
@@ -66,7 +66,7 @@ impl PgBartSettings {
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
         response: Response,
-        split_rules: Vec<Box<dyn SplitRule>>,
+        split_rules: Vec<SplitRuleType>,
     ) -> Self {
         Self {
             n_trees,
@@ -134,7 +134,9 @@ impl PgBartState {
 
         // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
+
         let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
+
         let tree_ops = TreeSamplingOps {
             alpha_vec,
             splitting_probs,
@@ -187,7 +189,7 @@ impl PgBartState {
         let mu = self.data.y().mean().unwrap();
 
         // Modify each tree sequentially
-        for tree_id in tree_ids {
+        for tree_id in 0..self.params.n_trees {
             // for tree_id in 0..self.params.n_trees {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];

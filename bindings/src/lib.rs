@@ -10,7 +10,7 @@ use crate::data::ExternalData;
 
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::pgbart::{PgBartSettings, PgBartState, Response};
-use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRule};
+use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 use pyo3::prelude::*;
 
 #[pyclass(unsendable)]
@@ -39,12 +39,12 @@ fn initialize(
     let data = Box::new(data);
     let response = Response::from_str(&response).unwrap();
 
-    let mut rules = Vec::new();
+    let mut rules: Vec<SplitRuleType> = Vec::new();
 
     for rule in split_rules {
-        let split: Box<dyn SplitRule> = match rule.as_str() {
-            "ContinuousSplit" => Box::new(ContinuousSplit),
-            "OneHotSplit" => Box::new(OneHotSplit),
+        let split = match rule.as_str() {
+            "ContinuousSplit" => SplitRuleType::Continuous(ContinuousSplit),
+            "OneHotSplit" => SplitRuleType::OneHot(OneHotSplit),
             _ => {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
                     "Unknown split type: {}",

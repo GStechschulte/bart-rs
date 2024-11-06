@@ -3,7 +3,11 @@
 use ndarray::{Array1, Array2};
 use std::collections::{HashSet, VecDeque};
 
-use crate::{pgbart::PgBartState, tree::DecisionTree};
+use crate::{
+    pgbart::PgBartState,
+    split_rules::{SplitRule, SplitRuleType},
+    tree::{DecisionTree, SplitValue},
+};
 
 /// Particle parameters
 #[derive(Debug)]
@@ -139,25 +143,36 @@ impl Particle {
         // Select the rule to be used sample a split value from _this_ feature
         let rule = &state.params.split_rules[feature];
 
-        // Collect the available feature values to sample a split value from
-        // The filter predicate filters out NaNs and Infinite values
-        let feature_values: Vec<_> = samples
-            .iter()
-            .map(|&i| X[[i, feature]])
-            .filter(|&x| x.is_finite())
-            .collect();
+        let (left_samples, right_samples, split_value) = match rule {
+            SplitRuleType::Continuous(continuous_rule) => {
+                let feature_values: Vec<f64> = samples
+                    .iter()
+                    .map(|&i| X[[i, feature]])
+                    .filter(|&x| x.is_finite())
+                    .collect();
 
-        // Sample a split value from a vector of candidate points
-        let split_value = match rule.get_split_value_dyn(&feature_values) {
-            Some(value) => value,
-            None => {
-                return false;
+                if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
+                    let (left, right) = continuous_rule.divide(&feature_values, &split_val);
+                    (left, right, SplitValue::Float(split_val))
+                } else {
+                    (Vec::new(), Vec::new(), SplitValue::Float(0.0)) // or return early here
+                }
+            }
+            SplitRuleType::OneHot(one_hot_rule) => {
+                let feature_values: Vec<i32> = samples
+                    .iter()
+                    .map(|&i| X[[i, feature]] as i32)
+                    .filter(|&x| x >= 0)
+                    .collect();
+
+                if let Some(split_val) = one_hot_rule.sample_split_value(&feature_values) {
+                    let (left, right) = one_hot_rule.divide(&feature_values, &split_val);
+                    (left, right, SplitValue::Integer(split_val)) // convert i32 to f64 for consistency
+                } else {
+                    (Vec::new(), Vec::new(), SplitValue::Integer(0)) // or return early here
+                }
             }
         };
-
-        // Divide candidate points based on the split value into left and right samples
-        let (left_samples, right_samples): (Vec<usize>, Vec<usize>) =
-            rule.divide_dyn(&feature_values, &split_value);
 
         if left_samples.is_empty() || right_samples.is_empty() {
             self.indices.expansion_nodes.push_back(node_index);

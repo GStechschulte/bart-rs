@@ -13,41 +13,66 @@ import bart_rs as pmb
 RANDOM_SEED = 8457
 RNG = np.random.RandomState(RANDOM_SEED)
 
-def main():
 
-    np.random.seed(0)
-    n = 1_000
-    X = np.random.uniform(0, 10, n)
-    Y = np.sin(X) + np.random.normal(0, 0.5, n)
-    data = pd.DataFrame(data={'Feature': X.flatten(), 'Y': Y})
+def test_bikes():
+    bikes = pd.read_csv(pm.get_data("bikes.csv"))
 
-    num_trees = 100
-    num_particles = 10
+    features = ["hour", "temperature", "humidity", "workingday"]
+
+    X = bikes[features]
+    Y = bikes["count"]
+
+    with pm.Model() as model_bikes:
+        # α = pm.Exponential("α", 1)
+        μ = pmb.BART("μ", X, np.log(Y), m=50)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(μ), alpha=1., observed=Y)
+        idata_bikes = pm.sample(compute_convergence_checks=False, random_seed=RANDOM_SEED)
+
+
+def test_coal():
+    coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
+
+    # discretize data
+    years = int(coal.max() - coal.min())
+    bins = years // 4
+    hist, x_edges = np.histogram(coal, bins=bins)
+    # compute the location of the centers of the discrete data
+    x_centers = x_edges[:-1] + (x_edges[1] - x_edges[0]) / 2
+    # xdata needs to be 2D for BART
+    X = x_centers[:, None]
+    # express data as the rate number of disaster per year
+    y = hist / 4
+
+    num_trees = 5
+    num_particles = 3
 
     with pm.Model() as model_coal:
 
-        mu_ = pmb.BART(
+        mu = pmb.BART(
             "mu",
-            X=X[..., None],
-            Y=Y,
+            X=X,
+            Y=y,
             m=num_trees,
             split_rules=["ContinuousSplit"],
             alpha=0.95,
             beta=2.0
         )
 
-        y = pm.Normal("y", mu_, sigma=1., observed=Y)
+        y = pm.Normal("y", mu, sigma=1., observed=y)
+
         idata = pm.sample(
             tune=300,
             draws=500,
-            step=[pmb.PGBART([mu_], batch=(0.1, 0.99), num_particles=num_particles)],
+            step=[pmb.PGBART([mu], batch=(0.1, 0.9999), num_particles=num_particles)],
             random_seed=42,
             )
 
-    y_hat = idata["posterior"]["mu"].mean(("chain", "draw"))
-    std_hat = idata["posterior"]["mu"].std(("chain", "draw"))
+        # step = pmb.PGBART([mu], num_particles=10)
+
+    y_hat = idata["posterior"]["mu"].mean(("chain", "draw")).to_numpy()
+    std_hat = idata["posterior"]["mu"].std(("chain", "draw")).to_numpy()
     idx_sort = np.argsort(X.flatten())
-    plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
+    plt.scatter(X.flatten(), y.flatten())
     plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
     plt.fill_between(
         X.flatten()[idx_sort],
@@ -66,4 +91,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    test_bikes()

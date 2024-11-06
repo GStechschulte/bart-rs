@@ -102,8 +102,6 @@ class PGBART(ArrayStepShared):
         else:
             self.split_rules = ["ContinuousSplit"] * self.X.shape[1]
 
-        print(self.split_rules)
-
         # If data is binary
         self.leaf_sd = np.ones((self.trees_shape, self.leaves_shape))
 
@@ -146,7 +144,6 @@ class PGBART(ArrayStepShared):
         t0 = perf_counter()
         sum_trees = step(self.state, self.tune)
         t1 = perf_counter()
-        # print(f"time elapsed: {t1 - t0}")
 
         return sum_trees, [{"time_rs": t1 - t0}]
 
