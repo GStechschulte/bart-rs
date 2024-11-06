@@ -14,7 +14,7 @@ use crate::data::PyData;
 use crate::math;
 use crate::ops::TreeSamplingOps;
 use crate::particle::{Particle, ParticleParams};
-use crate::split_rules::SplitRule;
+use crate::split_rules::SplitRuleType;
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
@@ -53,7 +53,7 @@ pub struct PgBartSettings {
     pub batch: (f64, f64),
     pub init_alpha_vec: Vec<f64>,
     pub response: Response,
-    pub split_rules: Vec<Box<dyn SplitRule>>,
+    pub split_rules: Vec<SplitRuleType>,
 }
 
 impl PgBartSettings {
@@ -66,7 +66,7 @@ impl PgBartSettings {
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
         response: Response,
-        split_rules: Vec<Box<dyn SplitRule>>,
+        split_rules: Vec<SplitRuleType>,
     ) -> Self {
         Self {
             n_trees,
@@ -114,8 +114,6 @@ impl PgBartState {
     /// let state = PgBartState::new(params, data);
     /// ```
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
-        println!("Init tree");
-        println!("-------------------------");
         let X = data.X();
         let y = data.y();
 
@@ -123,9 +121,6 @@ impl PgBartState {
         let mu = y.mean().unwrap();
         let leaf_value = mu / m;
         let predictions = Array1::from_elem(y.len(), mu);
-
-        println!("y.mean(): {}", mu);
-        println!("leaf_value: {}", leaf_value);
 
         let variable_inclusion = vec![0; X.ncols()];
 
@@ -139,10 +134,8 @@ impl PgBartState {
 
         // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
-        println!("alpha_vec: {:?}", alpha_vec);
-        let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
 
-        println!("Splitting probs: {:?}", splitting_probs);
+        let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
 
         let tree_ops = TreeSamplingOps {
             alpha_vec,
@@ -175,9 +168,6 @@ impl PgBartState {
     /// The grown particles are then resampled according to their log-likelihood, of which
     /// one is selected to replace the current tree `M_i`.
     pub fn step(&mut self) {
-        println!("Step method");
-        println!("-------------------------");
-
         let batch: (usize, usize) = (
             (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize,
             (self.params.n_trees as f64 * self.params.batch.1).ceil() as usize,
@@ -197,10 +187,9 @@ impl PgBartState {
 
         // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
         let mu = self.data.y().mean().unwrap();
-        println!("Step mu: {}", mu);
 
         // Modify each tree sequentially
-        for tree_id in tree_ids {
+        for tree_id in 0..self.params.n_trees {
             // for tree_id in 0..self.params.n_trees {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
@@ -208,9 +197,6 @@ impl PgBartState {
             // Compute the sum of trees without the old particle we are attempting to replace
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
-
-            println!("old_predictions: {:?}", old_predictions);
-            println!("predictions_minus_old: {:?}", predictions_minus_old);
 
             // Initialize local particles. These local particles are to be mutated (grown)
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
@@ -230,7 +216,6 @@ impl PgBartState {
                 unfinished_particles.retain_mut(|p| {
                     // Attempt to grow the particle
                     if p.grow(&self.data.X(), self) {
-                        println!("Tree grew");
                         self.update_weight(p, &predictions_minus_old);
                     }
                     // Return unfinished particles
@@ -292,11 +277,8 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
-        println!("Updating particle weight");
-        println!("-------------------------");
         // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
-        println!("particle_predictions: {:?}", preds);
         let (log_likelihood, _gradient) = self.data.evaluate_logp(preds).unwrap();
 
         particle.weight.set(log_likelihood);

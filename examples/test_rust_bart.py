@@ -13,14 +13,23 @@ import bart_rs as pmb
 RANDOM_SEED = 8457
 RNG = np.random.RandomState(RANDOM_SEED)
 
-def main():
 
-    # np.random.seed(0)
-    # n = 1_000
-    # X = np.random.uniform(0, 10, n)
-    # Y = np.sin(X) + np.random.normal(0, 0.5, n)
-    # data = pd.DataFrame(data={'Feature': X.flatten(), 'Y': Y})
-    #
+def test_bikes():
+    bikes = pd.read_csv(pm.get_data("bikes.csv"))
+
+    features = ["hour", "temperature", "humidity", "workingday"]
+
+    X = bikes[features]
+    Y = bikes["count"]
+
+    with pm.Model() as model_bikes:
+        # α = pm.Exponential("α", 1)
+        μ = pmb.BART("μ", X, np.log(Y), m=50)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(μ), alpha=1., observed=Y)
+        idata_bikes = pm.sample(compute_convergence_checks=False, random_seed=RANDOM_SEED)
+
+
+def test_coal():
     coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
 
     # discretize data
@@ -51,30 +60,30 @@ def main():
 
         y = pm.Normal("y", mu, sigma=1., observed=y)
 
-        # idata = pm.sample(
-        #     tune=300,
-        #     draws=500,
-        #     step=[pmb.PGBART([mu_], batch=(0.1, 0.99), num_particles=num_particles)],
-        #     random_seed=42,
-        #     )
+        idata = pm.sample(
+            tune=300,
+            draws=500,
+            step=[pmb.PGBART([mu], batch=(0.1, 0.9999), num_particles=num_particles)],
+            random_seed=42,
+            )
 
-        step = pmb.PGBART([mu], num_particles=10)
+        # step = pmb.PGBART([mu], num_particles=10)
 
-    # y_hat = idata["posterior"]["mu"].mean(("chain", "draw"))
-    # std_hat = idata["posterior"]["mu"].std(("chain", "draw"))
-    # idx_sort = np.argsort(X.flatten())
-    # plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
-    # plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
-    # plt.fill_between(
-    #     X.flatten()[idx_sort],
-    #     y_hat[idx_sort] + std_hat[idx_sort] * 2,
-    #     y_hat[idx_sort] - std_hat[idx_sort] * 2,
-    #     color="grey",
-    #     alpha=0.25
-    # )
-    # plt.show()
+    y_hat = idata["posterior"]["mu"].mean(("chain", "draw")).to_numpy()
+    std_hat = idata["posterior"]["mu"].std(("chain", "draw")).to_numpy()
+    idx_sort = np.argsort(X.flatten())
+    plt.scatter(X.flatten(), y.flatten())
+    plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
+    plt.fill_between(
+        X.flatten()[idx_sort],
+        y_hat[idx_sort] + std_hat[idx_sort] * 2,
+        y_hat[idx_sort] - std_hat[idx_sort] * 2,
+        color="grey",
+        alpha=0.25
+    )
+    plt.show()
 
-    sum_trees = step.astep(1)
+    # sum_trees = step.astep(1)
     # idx_sort = np.argsort(X.flatten())
     # plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
     # plt.plot(X.flatten()[idx_sort], sum_trees[idx_sort], color="black")
@@ -82,4 +91,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    test_bikes()

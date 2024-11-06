@@ -1,113 +1,63 @@
 use rand::Rng;
-use rand_distr::Uniform;
-use std::any::Any;
 use std::f64;
 use std::iter::Iterator;
 
-use crate::tree::SplitValue;
+pub trait SplitRule {
+    type Value;
 
-/// Interface for split strategies.
-pub trait SplitRule: Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue>;
-    fn divide_dyn(
+    fn sample_split_value(&self, candidates: &[Self::Value]) -> Option<Self::Value>;
+    fn divide(
         &self,
-        candidates: &dyn Any,
-        split_value: &SplitValue,
+        candidates: &[Self::Value],
+        split_value: &Self::Value,
     ) -> (Vec<usize>, Vec<usize>);
 }
 
-/// Standard continuous split rule. Pick a pivot value and split
-/// depending on if variable is smaller or greater than the value picked.
 pub struct ContinuousSplit;
 
 impl SplitRule for ContinuousSplit {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+    type Value = f64;
 
-    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue> {
-        if let Some(candidates) = candidates.downcast_ref::<Vec<f64>>() {
-            if candidates.len() > 1 {
-                let idx = rand::thread_rng().gen_range(0..candidates.len());
-                Some(SplitValue::Float(candidates[idx]))
-            } else {
-                None
-            }
+    fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
+        if candidates.len() > 1 {
+            let idx = rand::thread_rng().gen_range(0..candidates.len());
+            Some(candidates[idx])
         } else {
             None
         }
     }
 
-    fn divide_dyn(
-        &self,
-        candidates: &dyn Any,
-        split_value: &SplitValue,
-    ) -> (Vec<usize>, Vec<usize>) {
-        if let Some(candidates) = candidates.downcast_ref::<Vec<f64>>() {
-            match split_value {
-                SplitValue::Float(threshold) => {
-                    let (left, right): (Vec<_>, Vec<_>) =
-                        (0..candidates.len()).partition(|&idx| candidates[idx] <= *threshold);
-                    (left, right)
-                }
-                SplitValue::Integer(threshold) => {
-                    let threshold = *threshold as f64;
-                    let (left, right): (Vec<_>, Vec<_>) =
-                        (0..candidates.len()).partition(|&idx| candidates[idx] <= threshold);
-                    (left, right)
-                }
-            }
-        } else {
-            (vec![], vec![])
-        }
+    fn divide(&self, candidates: &[f64], split_value: &f64) -> (Vec<usize>, Vec<usize>) {
+        let (left, right): (Vec<usize>, Vec<usize>) =
+            (0..candidates.len()).partition(|&idx| candidates[idx] <= *split_value);
+        (left, right)
     }
 }
 
-/// Choose a single categorical value and branch on it if the variable is that value or not.
 pub struct OneHotSplit;
 
 impl SplitRule for OneHotSplit {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+    type Value = i32;
 
-    fn get_split_value_dyn(&self, candidates: &dyn Any) -> Option<SplitValue> {
-        if let Some(candidates) = candidates.downcast_ref::<Vec<i32>>() {
-            if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
-                let idx = rand::thread_rng().gen_range(0..candidates.len());
-                Some(SplitValue::Integer(candidates[idx]))
-            } else {
-                None
-            }
+    fn sample_split_value(&self, candidates: &[i32]) -> Option<i32> {
+        if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
+            let idx = rand::thread_rng().gen_range(0..candidates.len());
+            Some(candidates[idx])
         } else {
             None
         }
     }
 
-    fn divide_dyn(
-        &self,
-        candidates: &dyn Any,
-        split_value: &SplitValue,
-    ) -> (Vec<usize>, Vec<usize>) {
-        if let Some(candidates) = candidates.downcast_ref::<Vec<i32>>() {
-            match split_value {
-                SplitValue::Integer(threshold) => {
-                    let (left, right): (Vec<_>, Vec<_>) =
-                        (0..candidates.len()).partition(|&idx| candidates[idx] == *threshold);
-                    (left, right)
-                }
-                SplitValue::Float(threshold) => {
-                    let threshold = *threshold as i32;
-                    let (left, right): (Vec<_>, Vec<_>) =
-                        (0..candidates.len()).partition(|&idx| candidates[idx] == threshold);
-                    (left, right)
-                }
-            }
-        } else {
-            (vec![], vec![])
-        }
+    fn divide(&self, candidates: &[i32], split_value: &i32) -> (Vec<usize>, Vec<usize>) {
+        let (left, right): (Vec<usize>, Vec<usize>) =
+            (0..candidates.len()).partition(|&idx| candidates[idx] == *split_value);
+        (left, right)
     }
+}
+
+pub enum SplitRuleType {
+    Continuous(ContinuousSplit),
+    OneHot(OneHotSplit),
 }
 
 /// Choose a random subset of the categorical values and branch on belonging to that set.

@@ -1,6 +1,11 @@
 use core::fmt;
 use std::cmp::Ordering;
 
+/// Enumerates the supported split value (threshold) types.
+///
+/// Used as the type for the `threshold` vector in a `DecisionTree` as this
+/// vector may contain different split values depending on the features in
+/// the design matrix `X`.
 #[derive(Debug)]
 pub enum SplitValue {
     Float(f64),
@@ -109,7 +114,6 @@ impl DecisionTree {
     /// An index is a leaf node if both of its potential children are outside
     /// the valid array bounds.
     pub fn is_leaf(&self, index: usize) -> bool {
-        // index >= self.feature.len() || (self.feature[index] == 0 && self.threshold[index] == 0.0)
         let left_child = 2 * index + 1;
         let right_child = 2 * index + 2;
         left_child >= self.feature.len() || right_child >= self.feature.len()
