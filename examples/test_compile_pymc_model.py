@@ -55,9 +55,13 @@ def compile_model(model):
 
     initial_point = model.initial_point()
     print(f"initial_point: {initial_point}")
+    print(f"initial_point.values(): {[val.shape for val in initial_point.values()]}")
 
     model_vars = model.value_vars
     print(f"model_vars: {model_vars}")
+
+    print(f"compiled_model.ndim: {compiled_pymc.n_dim}")
+    print(f"compiled_model._n_dim: {compiled_pymc._n_dim}")
 
     # initial_values = model.initial_point()
     # init_mu = np.array(initial_values.get("mu", None))
@@ -69,7 +73,6 @@ def compile_model(model):
     # print(f"init logp: {logp_value}")
 
     print(f"shared: {compiled_pymc.shared_data}")
-
 
 def test_asymmetric_laplace():
     bmi = pd.read_csv(pm.get_data("bmi.csv"))
@@ -91,6 +94,8 @@ def test_compile_negative_binomial_model():
     X = bikes[["hour", "temperature", "humidity", "workingday"]].values
     Y = bikes["count"].values
 
+    print(f"X.shape: {X.shape}")
+
     with pm.Model() as model_bikes:
         alpha = pm.Exponential("alpha", 1)
         mu = pmb.BART("mu", X, np.log(Y))
@@ -99,6 +104,46 @@ def test_compile_negative_binomial_model():
 
     return compile_model(model_bikes)
 
+def test_coal():
+    coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
+
+    # discretize data
+    years = int(coal.max() - coal.min())
+    bins = years // 4
+    hist, x_edges = np.histogram(coal, bins=bins)
+    # compute the location of the centers of the discrete data
+    x_centers = x_edges[:-1] + (x_edges[1] - x_edges[0]) / 2
+    # xdata needs to be 2D for BART
+    X = x_centers[:, None]
+    # express data as the rate number of disaster per year
+    y = hist / 4
+
+    num_trees = 5
+    num_particles = 3
+
+    with pm.Model() as model_coal:
+
+        mu = pmb.BART(
+            "mu",
+            X=X,
+            Y=y,
+            m=num_trees,
+            split_rules=["ContinuousSplit"],
+            alpha=0.95,
+            beta=2.0
+        )
+
+        sigma = pm.HalfNormal("sigma", 5.)
+        y = pm.Normal("y", mu, sigma=sigma, observed=y)
+
+        # idata = pm.sample(
+        #     tune=300,
+        #     draws=500,
+        #     step=[pmb.PGBART([mu], batch=(0.1, 0.9999), num_particles=num_particles)],
+        #     random_seed=42,
+        #     )
+
+    return compile_model(model_coal)
 
 def test_get_model_logp():
 
@@ -164,8 +209,9 @@ def test_get_model_logp():
 
 def main():
 
-    test_compile_negative_binomial_model()
-    test_asymmetric_laplace()
+    test_coal()
+    # test_compile_negative_binomial_model()
+    # test_asymmetric_laplace()
 
 if __name__ == "__main__":
     main()
