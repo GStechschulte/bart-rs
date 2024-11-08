@@ -23,11 +23,15 @@ def test_bikes():
     Y = bikes["count"]
 
     with pm.Model() as model_bikes:
-        # α = pm.Exponential("α", 1)
-        μ = pmb.BART("μ", X, np.log(Y), m=50)
-        y = pm.NegativeBinomial("y", mu=pm.math.exp(μ), alpha=1., observed=Y)
-        idata_bikes = pm.sample(compute_convergence_checks=False, random_seed=RANDOM_SEED)
-
+        # alpha = pm.Exponential("alpha", 1.)
+        mu = pmb.BART("mu", X, np.log(Y), m=50)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=1., observed=Y)
+        idata_bikes = pm.sample(
+            tune=1000,
+            draws=1000,
+            step=[pmb.PGBART([mu], batch=(0.1, 0.99), num_particles=10)],
+            random_seed=RANDOM_SEED,
+            )
 
 def test_coal():
     coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
@@ -43,8 +47,8 @@ def test_coal():
     # express data as the rate number of disaster per year
     y = hist / 4
 
-    num_trees = 5
-    num_particles = 3
+    num_trees = 50
+    num_particles = 10
 
     with pm.Model() as model_coal:
 
@@ -58,7 +62,9 @@ def test_coal():
             beta=2.0
         )
 
-        y = pm.Normal("y", mu, sigma=1., observed=y)
+        sigma = pm.HalfNormal("sigma", 5.)
+
+        y = pm.Normal("y", mu, sigma=sigma, observed=y)
 
         idata = pm.sample(
             tune=300,
@@ -69,18 +75,19 @@ def test_coal():
 
         # step = pmb.PGBART([mu], num_particles=10)
 
-    y_hat = idata["posterior"]["mu"].mean(("chain", "draw")).to_numpy()
-    std_hat = idata["posterior"]["mu"].std(("chain", "draw")).to_numpy()
-    idx_sort = np.argsort(X.flatten())
-    plt.scatter(X.flatten(), y.flatten())
-    plt.plot(X.flatten()[idx_sort], y_hat[idx_sort], color="black")
-    plt.fill_between(
-        X.flatten()[idx_sort],
-        y_hat[idx_sort] + std_hat[idx_sort] * 2,
-        y_hat[idx_sort] - std_hat[idx_sort] * 2,
-        color="grey",
-        alpha=0.25
-    )
+    _, ax = plt.subplots(nrows=1, ncols=1)
+
+    rates = idata.posterior["mu"] / 4
+    rate_mean = rates.mean(dim=["draw", "chain"]).to_numpy()
+    ax.plot(x_centers, rate_mean, c="black", lw=3)
+    # ax.plot(x_centers, y / 4, "k.", marker="x")
+    az.plot_hdi(x_centers, rates, smooth=False)
+    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
+    # ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
+    # plt.ylim((0.0, 1.2))
+    # ax.set_xlabel("years")
+    # ax.set_ylabel("rate")
+    # ax.set_title("PyMC-BART: using shared step")
     plt.show()
 
     # sum_trees = step.astep(1)
@@ -92,3 +99,4 @@ def test_coal():
 
 if __name__ == "__main__":
     test_bikes()
+    # test_coal()

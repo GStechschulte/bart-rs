@@ -189,8 +189,8 @@ impl PgBartState {
         let mu = self.data.y().mean().unwrap();
 
         // Modify each tree sequentially
+        // for tree_id in tree_ids {
         for tree_id in 0..self.params.n_trees {
-            // for tree_id in 0..self.params.n_trees {
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 

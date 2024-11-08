@@ -6,7 +6,7 @@ use std::collections::{HashSet, VecDeque};
 use crate::{
     pgbart::PgBartState,
     split_rules::{SplitRule, SplitRuleType},
-    tree::{DecisionTree, SplitValue},
+    tree::DecisionTree,
 };
 
 /// Particle parameters
@@ -153,23 +153,23 @@ impl Particle {
 
                 if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
                     let (left, right) = continuous_rule.divide(&feature_values, &split_val);
-                    (left, right, SplitValue::Float(split_val))
+                    (left, right, split_val)
                 } else {
-                    (Vec::new(), Vec::new(), SplitValue::Float(0.0)) // or return early here
+                    return false;
                 }
             }
             SplitRuleType::OneHot(one_hot_rule) => {
                 let feature_values: Vec<i32> = samples
                     .iter()
-                    .map(|&i| X[[i, feature]] as i32)
+                    .map(|&i| X[[i, feature]] as i32) // Explicit type cast to i32
                     .filter(|&x| x >= 0)
                     .collect();
 
                 if let Some(split_val) = one_hot_rule.sample_split_value(&feature_values) {
                     let (left, right) = one_hot_rule.divide(&feature_values, &split_val);
-                    (left, right, SplitValue::Integer(split_val)) // convert i32 to f64 for consistency
+                    (left, right, split_val as f64) // Convert i32 to f64 for consistency
                 } else {
-                    (Vec::new(), Vec::new(), SplitValue::Integer(0)) // or return early here
+                    return false;
                 }
             }
         };

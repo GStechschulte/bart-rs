@@ -51,10 +51,6 @@ impl TreeSamplingOps {
         }
     }
 
-    // pub fn fast_linear_fit(&self, mu: &Vec<f64, obs: &Vec<f64>) {
-    //     todo!("Implement!!!")
-    // }
-
     /// Sample the index of a feature to split on.
     ///
     /// Sampling of splitting variables is proportional to `alpha_vec`.
