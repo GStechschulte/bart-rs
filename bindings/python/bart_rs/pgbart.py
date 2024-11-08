@@ -52,6 +52,7 @@ class PGBART(ArrayStepShared):
     default_blocked = False
     generates_stats = True
     # stats_dtypes = [{"variable_inclusion": object, "tune": bool}]
+    # stats_dtypes = [{"time_rs": float, "tune": bool}]
     stats_dtypes = [{"time_rs": float}]
 
     def __init__(  # noqa: PLR0915
@@ -118,6 +119,8 @@ class PGBART(ArrayStepShared):
             # If it's a numpy array or other object, get its data pointer
             user_data_address = self.compiled_pymc_model.user_data.ctypes.data_as(ctypes.c_void_p).value
 
+        print(f"self.compiled_pymc_model._n_dim: {self.compiled_pymc_model._n_dim}")
+
         # Initialize the Rust sampler
         self.state = initialize(
             X=self.X,
@@ -145,6 +148,7 @@ class PGBART(ArrayStepShared):
         sum_trees = step(self.state, self.tune)
         t1 = perf_counter()
 
+        # return sum_trees, [{"time_rs": t1 - t0}, {"tune": self.tune}]
         return sum_trees, [{"time_rs": t1 - t0}]
 
     @staticmethod

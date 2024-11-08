@@ -62,6 +62,7 @@ impl PyData for ExternalData {
     }
 
     fn evaluate_logp(&self, x: Array1<f64>) -> Result<(f64, Vec<f64>), &'static str> {
+        println!("x.len(): {:?}, self.n_dim: {:?}", x.len(), self.n_dim);
         if x.len() != self.n_dim {
             return Err("Input dimension mismatch");
         }
