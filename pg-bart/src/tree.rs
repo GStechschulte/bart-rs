@@ -1,39 +1,10 @@
 use core::fmt;
 use std::cmp::Ordering;
 
-/// Enumerates the supported split value (threshold) types.
-///
-/// Used as the type for the `threshold` vector in a `DecisionTree` as this
-/// vector may contain different split values depending on the features in
-/// the design matrix `X`.
-#[derive(Debug)]
-pub enum SplitValue {
-    Float(f64),
-    Integer(i32),
-}
-
-impl SplitValue {
-    fn compare(&self, other: &SplitValue) -> Ordering {
-        match (self, other) {
-            (SplitValue::Float(a), SplitValue::Float(b)) => {
-                a.partial_cmp(b).unwrap_or(Ordering::Equal)
-            }
-            (SplitValue::Integer(a), SplitValue::Integer(b)) => a.cmp(b),
-            // Convert integers to floats for mixed comparisons
-            (SplitValue::Float(a), SplitValue::Integer(b)) => {
-                a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal)
-            }
-            (SplitValue::Integer(a), SplitValue::Float(b)) => {
-                (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal)
-            }
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct DecisionTree {
     pub feature: Vec<usize>,
-    pub threshold: Vec<SplitValue>,
+    pub threshold: Vec<f64>,
     pub value: Vec<f64>,
 }
 
@@ -77,13 +48,13 @@ impl DecisionTree {
     /// ```
     pub fn new(init_value: f64) -> Self {
         Self {
-            feature: vec![0],                        // Initialize with a placeholder feature
-            threshold: vec![SplitValue::Float(0.0)], // Initialize with a placeholder threshold
+            feature: vec![0],     // Initialize with a placeholder feature
+            threshold: vec![0.0], // Initialize with a placeholder threshold
             value: vec![init_value],
         }
     }
 
-    pub fn add_node(&mut self, feature: usize, threshold: SplitValue, value: f64) -> usize {
+    pub fn add_node(&mut self, feature: usize, threshold: f64, value: f64) -> usize {
         let node_id = self.feature.len();
         self.feature.push(feature);
         self.threshold.push(threshold);
@@ -132,7 +103,7 @@ impl DecisionTree {
         &mut self,
         node_index: usize,
         feature: usize,
-        threshold: SplitValue,
+        threshold: f64,
         left_value: f64,
         right_value: f64,
     ) -> Result<(usize, usize), TreeError> {
@@ -149,20 +120,21 @@ impl DecisionTree {
         self.threshold[node_index] = threshold;
 
         // Add new left and right leaf nodes
-        let left_child_index = self.add_node(0, SplitValue::Float(0.0), left_value);
-        let right_child_index = self.add_node(0, SplitValue::Float(0.0), right_value);
+        let left_child_index = self.add_node(0, 0.0, left_value);
+        let right_child_index = self.add_node(0, 0.0, right_value);
 
         Ok((left_child_index, right_child_index))
     }
 
-    pub fn predict(&self, sample: &[SplitValue]) -> f64 {
+    pub fn predict(&self, sample: &[f64]) -> f64 {
         let mut node = 0;
         loop {
             if self.is_leaf(node) {
                 return self.value[node];
             }
             let feature = self.feature[node];
-            node = match sample[feature].compare(&self.threshold[node]) {
+            let threshold = self.threshold[node];
+            node = match sample[feature].partial_cmp(&threshold).unwrap() {
                 Ordering::Less => self.left_child(node).unwrap(),
                 _ => self.right_child(node).unwrap(),
             };

@@ -13,6 +13,8 @@ pub trait SplitRule {
     ) -> (Vec<usize>, Vec<usize>);
 }
 
+/// Standard continuous split rule. Pick a pivot value and split
+/// depending on if variable is smaller or greater than the value picked.
 pub struct ContinuousSplit;
 
 impl SplitRule for ContinuousSplit {
@@ -34,6 +36,7 @@ impl SplitRule for ContinuousSplit {
     }
 }
 
+/// Choose a single categorical value and branch on it if the variable is that value or not.
 pub struct OneHotSplit;
 
 impl SplitRule for OneHotSplit {
@@ -55,14 +58,14 @@ impl SplitRule for OneHotSplit {
     }
 }
 
-pub enum SplitRuleType {
-    Continuous(ContinuousSplit),
-    OneHot(OneHotSplit),
-}
-
 /// Choose a random subset of the categorical values and branch on belonging to that set.
 ///
 /// This is the approach taken by Sameer K. Deshpande.
 /// flexBART: Flexible Bayesian regression trees with categorical predictors. arXiv,
 /// `link <https://arxiv.org/abs/2211.04459>`__
 pub struct SubsetSplit;
+
+pub enum SplitRuleType {
+    Continuous(ContinuousSplit),
+    OneHot(OneHotSplit),
+}
