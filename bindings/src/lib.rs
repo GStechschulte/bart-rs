@@ -33,6 +33,7 @@ fn initialize(
     leaf_sd: f64,
     batch: (f64, f64),
 ) -> PyResult<StateWrapper> {
+    // Heap allocation because size of 'ExternalData' is not known at compile time
     let data = Box::new(ExternalData::new(X, y, logp));
     let response = Response::from_str(&response).unwrap();
     let mut rules: Vec<SplitRuleType> = Vec::new();
