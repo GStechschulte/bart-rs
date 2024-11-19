@@ -23,8 +23,6 @@ fn initialize(
     X: PyReadonlyArray2<f64>,
     y: PyReadonlyArray1<f64>,
     logp: usize,
-    // n_dim: usize,
-    // user_data: usize,
     alpha: f64,
     beta: f64,
     split_prior: PyReadonlyArray1<f64>,
@@ -35,11 +33,8 @@ fn initialize(
     leaf_sd: f64,
     batch: (f64, f64),
 ) -> PyResult<StateWrapper> {
-    let data = ExternalData::new(X, y, logp);
-    // let data = ExternalData::new(X, y, logp, n_dim, user_data);
-    let data = Box::new(data);
+    let data = Box::new(ExternalData::new(X, y, logp));
     let response = Response::from_str(&response).unwrap();
-
     let mut rules: Vec<SplitRuleType> = Vec::new();
 
     for rule in split_rules {
@@ -82,14 +77,6 @@ fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) -> &'py Py
 
     py_array
 }
-
-// #[pymodule]
-// fn bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(initialize, m)?)?;
-//     m.add_function(wrap_pyfunction!(step, m)?)?;
-//     // m.add_class::<ContinuousSplit>()?;
-//     Ok(())
-// }
 
 #[pymodule]
 fn bart_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
