@@ -8,6 +8,7 @@ use ndarray::Array1;
 use rand::{thread_rng, Rng};
 
 use rand::distributions::WeightedIndex;
+use rand_distr::num_traits::float::FloatCore;
 use rand_distr::{Distribution, Normal, Uniform};
 
 use crate::data::PyData;
@@ -121,7 +122,6 @@ impl PgBartState {
         let mu = y.mean().unwrap();
         let leaf_value = mu / m;
         let predictions = Array1::from_elem(y.len(), mu);
-
         let variable_inclusion = vec![0; X.ncols()];
 
         // Particles can grow (mutate)
@@ -279,7 +279,7 @@ impl PgBartState {
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
         // To update the weight, the grown Particle needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
-        let (log_likelihood, _gradient) = self.data.evaluate_logp(preds).unwrap();
+        let log_likelihood = self.data.evaluate_logp(preds);
 
         particle.weight.set(log_likelihood);
     }
@@ -296,14 +296,14 @@ impl PgBartState {
             .cloned()
             .fold(f64::NEG_INFINITY, f64::max);
 
-        let weights: Vec<f64> = log_weights
+        let exp_shifted: Vec<f64> = log_weights
             .iter()
             .map(|&w| (w - max_log_weight).exp())
             .collect();
 
-        let sum_weights: f64 = weights.iter().sum();
+        let sum_exp: f64 = exp_shifted.iter().sum();
 
-        weights.iter().map(|&w| w / sum_weights).collect()
+        exp_shifted.iter().map(|&w| w / sum_exp).collect()
     }
 
     /// Systematic resampling to sample new Particles.

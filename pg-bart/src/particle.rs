@@ -34,7 +34,8 @@ pub struct SampleIndices {
 }
 
 impl SampleIndices {
-    /// Creates a new...
+    /// Creates a new `SampleIndices` struct used to track the training
+    /// samples that belong to node `i`.
     ///
     /// `leaf_nodes` and `expansion_nodes` start from 0 as this is the
     /// index of the root node, i.e when creating a new Particle, only
