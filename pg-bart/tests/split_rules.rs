@@ -33,9 +33,9 @@ fn test_one_hot_split_rule() {
     let static_split_value = 2 as i32;
     let (left, right) = rule.divide(&feature_values, &static_split_value);
 
-    // Indices where value equals 2 go left
+    // Indices where value = 2 go left
     assert_eq!(left, vec![1, 3]);
-    // Indices where value equals 2 go right
+    // Indices where value != 2 go right
     assert_eq!(right, vec![0, 2]);
 
     // Test homogeneous vector of integers
@@ -47,8 +47,8 @@ fn test_one_hot_split_rule() {
     let static_split_value = 1 as i32;
     let (left, right) = rule.divide(&feature_values, &static_split_value);
 
-    // Indices where value equals 1 go left
+    // Indices where value = 1 go left
     assert_eq!(left, vec![0, 1, 2, 3]);
-    // Indices where value equals 2 go right
+    // Indices where value != 1 go right
     assert_eq!(right, vec![]);
 }
