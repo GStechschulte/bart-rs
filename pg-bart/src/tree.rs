@@ -24,28 +24,22 @@ impl fmt::Display for TreeError {
 }
 
 impl DecisionTree {
-    /// Creates a new DecisionTree with an initial value set as the root node.
+    /// Creates a new `DecisionTree` with an initial value set as the root node.
     /// A decision tree is implemented as three parallel vectors.
     ///
     /// Using parallel vectors allows for a more cache-efficient implementation.
     /// Moreover, index accessing allows one to more easily avoid borrow checker
     /// issues related to classical recursive binary tree implementations.
     ///
-    /// The i-th element of each vector holds information about node `i`. Node 0
-    /// is the tree's root. Some of the arrays only apply to either leaves or
-    /// split nodes. In this case, the values of the nodes of other vectors is
+    /// The `i-th` element of each vector holds information about node `i`. Node 0
+    /// is the tree's root. Some of the vectors only apply to either leaves or
+    /// split nodes. In this case, the values of the nodes of the other vectors is
     /// arbitrary. For example, `feature` and `threshold` vectors only apply to
-    /// split nodes. The values for leaf nodes in these arrays are therefore
-    /// arbitrary. The threee vectors are:
+    /// split nodes. The values for leaf nodes in these vectors are therefore
+    /// arbitrary. The three vectors are:
     /// - `feature`. Stores the feature index for splitting at the i'th node.
     /// - `threshold`. Stores the threshold value for the i'th node split.
-    /// - `value`. Stores output value for the i'th node
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let mut tree = DecisionTree::new(0.5);
-    /// ```
+    /// - `value`. Stores output values for the i'th node
     pub fn new(init_value: f64) -> Self {
         Self {
             feature: vec![0],     // Initialize with a placeholder feature
@@ -54,6 +48,8 @@ impl DecisionTree {
         }
     }
 
+    /// Adds a new node to the `DecisionTree` and returns the location of _this_ node in the
+    /// `feature` vector.
     pub fn add_node(&mut self, feature: usize, threshold: f64, value: f64) -> usize {
         let node_id = self.feature.len();
         self.feature.push(feature);
@@ -62,6 +58,7 @@ impl DecisionTree {
         node_id
     }
 
+    /// Computes the left child index of _this_ node.
     pub fn left_child(&self, index: usize) -> Option<usize> {
         let left_index = index * 2 + 1;
         if left_index < self.feature.len() {
@@ -71,6 +68,7 @@ impl DecisionTree {
         }
     }
 
+    /// Computes the right child index of _this_ node.
     pub fn right_child(&self, index: usize) -> Option<usize> {
         let right_index = index * 2 + 2;
         if right_index < self.feature.len() {
@@ -80,23 +78,25 @@ impl DecisionTree {
         }
     }
 
-    /// Check whether the passed index is a leaf node.
+    /// Checks whether the passed index is a leaf node.
     ///
     /// An index is a leaf node if both of its potential children are outside
     /// the valid array bounds.
     pub fn is_leaf(&self, index: usize) -> bool {
-        let left_child = 2 * index + 1;
-        let right_child = 2 * index + 2;
-        left_child >= self.feature.len() || right_child >= self.feature.len()
+        self.left_child(index).is_none() && self.right_child(index).is_none()
     }
 
+    /// Computes the depth of _this_ node in the `DecisionTree`.
     pub fn node_depth(&self, index: usize) -> usize {
-        if index == 0 {
-            0
-        } else {
-            let parent_index = (index - 1) / 2;
-            1 + self.node_depth(parent_index)
+        let mut depth = 0;
+        let mut current_index = index;
+
+        while current_index != 0 {
+            depth += 1;
+            current_index = (current_index - 1) / 2;
         }
+
+        depth
     }
 
     pub fn split_node(
