@@ -64,7 +64,7 @@ fn test_split_non_leaf_node() {
 
 #[test]
 fn test_split_invalid_node() {
-    let mut tree = DecisionTree::new(0.0);
+    let tree = DecisionTree::new(0.0);
 
     // There are no left or right children yet
     assert_eq!(tree.left_child(1), None);
