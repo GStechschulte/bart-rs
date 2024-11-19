@@ -25,8 +25,7 @@ from pymc.step_methods.compound import Competence
 from pytensor.graph.basic import Variable
 
 from bart_rs.bart import BARTRV
-from bart_rs.compile_pymc import compile_pymc_model_numba
-
+from bart_rs.compile_pymc import CompiledPyMCModel
 from bart_rs.bart_rs import initialize, step
 
 
@@ -51,9 +50,8 @@ class PGBART(ArrayStepShared):
     name = "pgbart"
     default_blocked = False
     generates_stats = True
-    # stats_dtypes = [{"variable_inclusion": object, "tune": bool}]
-    # stats_dtypes = [{"time_rs": float, "tune": bool}]
-    stats_dtypes = [{"time_rs": float}]
+    # TODO: Add 'variable_inclusion' to dict
+    stats_dtypes = [{"time_rs": float, "tune": bool}]
 
     def __init__(  # noqa: PLR0915
         self,
@@ -65,7 +63,6 @@ class PGBART(ArrayStepShared):
 
         model = modelcontext(model)
         initial_values = model.initial_point()
-        self.compiled_pymc_model = compile_pymc_model_numba(model)
 
         # Get the instances of the BART random variable from the PyMC model
         if vars is None:
@@ -112,22 +109,15 @@ class PGBART(ArrayStepShared):
         else:
             self.leaf_sd *= self.bart.Y.std() / self.m**0.5
 
-        # Get the user data address
-        if isinstance(self.compiled_pymc_model.user_data, ctypes.Array):
-            user_data_address = ctypes.cast(self.compiled_pymc_model.user_data, ctypes.c_void_p).value
-        else:
-            # If it's a numpy array or other object, get its data pointer
-            user_data_address = self.compiled_pymc_model.user_data.ctypes.data_as(ctypes.c_void_p).value
-
-        print(f"self.compiled_pymc_model._n_dim: {self.compiled_pymc_model._n_dim}")
+        # Compile the PyMC model to create a C callback. This function pointer is
+        # passed to Rust and called using Rust's foreign function interface (FFI)
+        self.compiled_pymc_model = CompiledPyMCModel(model, vars)
 
         # Initialize the Rust sampler
         self.state = initialize(
             X=self.X,
             y=self.bart.Y,
-            logp=self.compiled_pymc_model.compiled_logp_func.address,
-            n_dim=self.compiled_pymc_model._n_dim,
-            user_data=user_data_address,
+            logp=self.compiled_pymc_model.get_function_pointer(),
             alpha=self.bart.alpha,
             beta=self.bart.beta,
             split_prior=self.alpha_vec,
@@ -140,16 +130,17 @@ class PGBART(ArrayStepShared):
         )
 
         self.tune = True
-        super().__init__(vars, self.compiled_pymc_model.shared_data)
+        super().__init__(vars, self.compiled_pymc_model.shared)
 
     def astep(self, _):
 
         t0 = perf_counter()
+        self.compiled_pymc_model.update_shared_arrays()
         sum_trees = step(self.state, self.tune)
         t1 = perf_counter()
 
-        # return sum_trees, [{"time_rs": t1 - t0}, {"tune": self.tune}]
-        return sum_trees, [{"time_rs": t1 - t0}]
+        stats = {"time_rs": t1 - t0, "tune": self.tune}
+        return sum_trees, [stats]
 
     @staticmethod
     def competence(var, has_grad):
