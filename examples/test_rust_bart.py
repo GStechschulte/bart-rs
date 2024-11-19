@@ -63,9 +63,9 @@ def test_coal():
             beta=2.0
         )
 
-        # sigma = pm.HalfNormal("sigma", 5.)
+        sigma = pm.HalfNormal("sigma", 5.)
 
-        y = pm.Normal("y", mu, sigma=1., observed=Y)
+        y = pm.Normal("y", mu, sigma=sigma, observed=Y)
 
         idata = pm.sample(
             tune=300,
@@ -101,5 +101,5 @@ def test_coal():
 
 
 if __name__ == "__main__":
-    test_bikes()
-    # test_coal()
+    # test_bikes()
+    test_coal()
