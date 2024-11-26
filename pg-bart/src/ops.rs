@@ -1,8 +1,66 @@
-use rand_distr::{Distribution, Normal, Uniform};
+use std::str::FromStr;
 
 use rand::{self, thread_rng, Rng};
+use rand_distr::{Distribution, Normal, Uniform};
 
-use crate::pgbart::Response;
+#[derive(Debug)]
+pub enum Response {
+    Constant(ConstantResponse),
+    Linear(LinearResponse),
+}
+
+impl FromStr for Response {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "constant" => Ok(Response::Constant(ConstantResponse)),
+            "linear" => Ok(Response::Linear(LinearResponse)),
+            _ => Err(format!("Unknown response type: {}", s)),
+        }
+    }
+}
+
+trait ResponseStrategy {
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64;
+}
+
+impl ResponseStrategy for Response {
+    /// Calls the corresponding `compute_leaf_value` for each `Response` variant
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
+        match self {
+            Response::Constant(constant) => constant.compute_leaf_value(mu, m, norm),
+            Response::Linear(linear) => linear.compute_leaf_value(mu, m, norm),
+        }
+    }
+}
+
+// Use unit structs to define an enum variant constructor for which the
+// ResponseStrategy trait can be implemented for as traits cannot be
+// implemented for enum variants as a variant is not a type
+#[derive(Debug)]
+pub struct ConstantResponse;
+impl ResponseStrategy for ConstantResponse {
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
+        match mu.len() {
+            2 => mu.iter().sum::<f64>() / (2.0 * m as f64) + norm,
+            _len @ 3.. => mu.iter().sum::<f64>() / (mu.len() as f64 * m as f64) + norm,
+            _ => unreachable!("Constant response requires at least 2 values."),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct LinearResponse;
+impl ResponseStrategy for LinearResponse {
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
+        match mu.len() {
+            2 => mu.iter().sum::<f64>() / (2.0 * m as f64) + norm,
+            _len @ 3.. => todo!("Implement fast_linear_fit."),
+            _ => unreachable!("Linear response requires at least 2 values."),
+        }
+    }
+}
 
 pub struct TreeSamplingOps {
     pub normal: Normal<f64>,
@@ -38,17 +96,23 @@ impl TreeSamplingOps {
         let mut rng = thread_rng();
         let norm = self.normal.sample(&mut rng) * leaf_sd;
 
-        match (mu.len(), response) {
-            (0, _) => 0.0,
-            (1, _) => mu[0] / m as f64 + norm,
-            (2, Response::Constant) | (2, Response::Linear) => {
-                mu.iter().sum::<f64>() / (2.0 * m as f64) + norm
-            }
-            (len @ 3.., Response::Constant) => {
-                mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm
-            }
-            (_len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
+        match mu.len() {
+            0 => 0.0,
+            1 => mu[0] / m as f64 + norm,
+            _ => response.compute_leaf_value(mu, m, norm),
         }
+
+        // match (mu.len(), response) {
+        //     (0, _) => 0.0,
+        //     (1, _) => mu[0] / m as f64 + norm,
+        //     (2, Response::Constant) | (2, Response::Linear) => {
+        //         mu.iter().sum::<f64>() / (2.0 * m as f64) + norm
+        //     }
+        //     (len @ 3.., Response::Constant) => {
+        //         mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm
+        //     }
+        //     (_len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
+        // }
     }
 
     /// Sample the index of a feature to split on.
