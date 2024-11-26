@@ -1,17 +1,18 @@
 #![allow(non_snake_case)]
 
-mod data;
-
 extern crate pg_bart;
-
-use std::str::FromStr;
 
 use crate::data::ExternalData;
 
+use std::str::FromStr;
+
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-use pg_bart::pgbart::{PgBartSettings, PgBartState, Response};
+use pg_bart::ops::Response;
+use pg_bart::pgbart::{PgBartSettings, PgBartState};
 use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 use pyo3::prelude::*;
+
+mod data;
 
 #[pyclass(unsendable)]
 struct StateWrapper {

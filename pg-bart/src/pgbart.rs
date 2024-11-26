@@ -1,44 +1,40 @@
 #![allow(non_snake_case)]
 
-use core::f64;
-use std::str::FromStr;
-
-use ndarray::Array1;
-
-use rand::{thread_rng, Rng};
-
-use rand::distributions::WeightedIndex;
-use rand_distr::num_traits::float::FloatCore;
-use rand_distr::{Distribution, Normal, Uniform};
-
 use crate::data::PyData;
 use crate::math;
-use crate::ops::TreeSamplingOps;
+use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::{Particle, ParticleParams};
 use crate::split_rules::SplitRuleType;
+
+use core::f64;
+
+use ndarray::Array1;
+use rand::distributions::WeightedIndex;
+use rand::{thread_rng, Rng};
+use rand_distr::{Distribution, Normal, Uniform};
 
 // Functions that implement the BART Particle Gibbs initialization and update step.
 //
 // Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 // struct, and then iterate (step) on this PgBartState.
 
-#[derive(Debug, PartialEq)]
-pub enum Response {
-    Constant,
-    Linear,
-}
+// #[derive(Debug, PartialEq)]
+// pub enum Response {
+//     Constant,
+//     Linear,
+// }
 
-impl FromStr for Response {
-    type Err = String;
+// impl FromStr for Response {
+//     type Err = String;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "constant" => Ok(Response::Constant),
-            "linear" => Ok(Response::Linear),
-            _ => Err(format!("Unknown response type: {}", s)),
-        }
-    }
-}
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match s.to_lowercase().as_str() {
+//             "constant" => Ok(Response::Constant),
+//             "linear" => Ok(Response::Linear),
+//             _ => Err(format!("Unknown response type: {}", s)),
+//         }
+//     }
+// }
 
 /// PgBartSetting are used to initialize a new PgBartState
 ///

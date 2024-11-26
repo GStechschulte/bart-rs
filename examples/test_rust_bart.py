@@ -99,7 +99,6 @@ def test_coal():
     # plt.plot(X.flatten()[idx_sort], sum_trees[idx_sort], color="black")
     # plt.show()
 
-
 if __name__ == "__main__":
     # test_bikes()
     test_coal()

@@ -1,6 +1,7 @@
-use rand::Rng;
 use std::f64;
 use std::iter::Iterator;
+
+use rand::Rng;
 
 pub trait SplitRule {
     type Value;
