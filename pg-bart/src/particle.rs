@@ -1,13 +1,14 @@
 #![allow(non_snake_case)]
 
-use ndarray::{Array1, Array2};
-use std::collections::{HashSet, VecDeque};
-
 use crate::{
     pgbart::PgBartState,
     split_rules::{SplitRule, SplitRuleType},
     tree::DecisionTree,
 };
+
+use std::collections::{HashSet, VecDeque};
+
+use ndarray::{Array1, Array2};
 
 /// Particle parameters
 #[derive(Debug)]
