@@ -50,8 +50,10 @@ class PGBART(ArrayStepShared):
     name = "pgbart"
     default_blocked = False
     generates_stats = True
-    # TODO: Add 'variable_inclusion' to dict
-    stats_dtypes = [{"time_rs": float, "tune": bool}]
+    stats_dtypes_shapes: dict[str, tuple[type, list]] = {
+        "variable_inclusion": (object, []),
+        "tune": (bool, []),
+    }
 
     def __init__(  # noqa: PLR0915
         self,
@@ -126,20 +128,21 @@ class PGBART(ArrayStepShared):
             n_trees=self.bart.m,
             n_particles=num_particles,
             leaf_sd=self.leaf_sd,
-            batch=batch
+            batch=batch,
+            leaves_shape=self.leaves_shape,
         )
 
         self.tune = True
         super().__init__(vars, self.compiled_pymc_model.shared)
 
     def astep(self, _):
-
-        t0 = perf_counter()
+        # t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
-        sum_trees = step(self.state, self.tune)
-        t1 = perf_counter()
+        sum_trees, variable_inclusion = step(self.state, self.tune)
+        # t1 = perf_counter()
 
-        stats = {"time_rs": t1 - t0, "tune": self.tune}
+        # stats = {"time_rs": t1 - t0, "tune": self.tune}
+        stats = {"variable_inclusion": variable_inclusion, "tune": self.tune}
         return sum_trees, [stats]
 
     @staticmethod
