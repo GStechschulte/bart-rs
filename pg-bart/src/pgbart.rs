@@ -1,7 +1,12 @@
+//! Functions that implement the BART Particle Gibbs initialization and update step.
+//!
+//! Functions that do Particle Gibbs steps operate by taking as input a PgBartState
+//! struct, and then iterate (step) on this PgBartState.
+
 #![allow(non_snake_case)]
 
 use crate::data::PyData;
-use crate::math;
+use crate::math::{normalized_cumsum, RunningStd};
 use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::{Particle, ParticleParams};
 use crate::split_rules::SplitRuleType;
@@ -13,34 +18,10 @@ use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal, Uniform};
 
-// Functions that implement the BART Particle Gibbs initialization and update step.
-//
-// Functions that do Particle Gibbs steps operate by taking as input a PgBartState
-// struct, and then iterate (step) on this PgBartState.
-
-// #[derive(Debug, PartialEq)]
-// pub enum Response {
-//     Constant,
-//     Linear,
-// }
-
-// impl FromStr for Response {
-//     type Err = String;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//         match s.to_lowercase().as_str() {
-//             "constant" => Ok(Response::Constant),
-//             "linear" => Ok(Response::Linear),
-//             _ => Err(format!("Unknown response type: {}", s)),
-//         }
-//     }
-// }
-
 /// PgBartSetting are used to initialize a new PgBartState
 ///
-/// The type of `split_rules` is a vector of types that implement the
-/// `SplitRule` trait. This is a trait object as the elements in the
-/// vector may not be homogeneous.
+/// `split_rules` is a vector of `SplitRuleType` enum variants as the user
+/// may pass different split rule types.
 pub struct PgBartSettings {
     pub n_trees: usize,
     pub n_particles: usize,
@@ -87,12 +68,15 @@ pub struct PgBartState {
     pub tree_ops: TreeSamplingOps,
     pub predictions: Array1<f64>,
     pub particles: Vec<Particle>,
-    pub variable_inclusion: Vec<usize>,
+    pub variable_inclusion: Vec<i32>,
     pub tune: bool,
+    pub tuning_stats: RunningStd,
+    pub lower: usize, // lower manages tree ids during tuning and drawing phases
+    pub iter: usize,
 }
 
 impl PgBartState {
-    /// Creates a PgBartState with the given PgBartSettings and PyData.
+    /// Creates a `PgBartState` with the given `PgBartSettings` and `PyData`.
     ///
     /// # Examples
     ///
@@ -129,9 +113,8 @@ impl PgBartState {
             .collect();
 
         // Tree sampling operations
-        let alpha_vec: Vec<f64> = params.init_alpha_vec.clone(); // TODO: Remove clone?
-
-        let splitting_probs: Vec<f64> = math::normalized_cumsum(&alpha_vec);
+        let alpha_vec: Vec<f64> = params.init_alpha_vec.clone();
+        let splitting_probs: Vec<f64> = normalized_cumsum(&alpha_vec);
 
         let tree_ops = TreeSamplingOps {
             alpha_vec,
@@ -149,7 +132,10 @@ impl PgBartState {
             predictions,
             particles,
             variable_inclusion,
-            tune: false,
+            tune: true,
+            tuning_stats: RunningStd::new(X.nrows()),
+            lower: 0,
+            iter: 1,
         }
     }
 
@@ -164,29 +150,32 @@ impl PgBartState {
     /// The grown particles are then resampled according to their log-likelihood, of which
     /// one is selected to replace the current tree `M_i`.
     pub fn step(&mut self) {
-        let batch: (usize, usize) = (
-            (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize,
-            (self.params.n_trees as f64 * self.params.batch.1).ceil() as usize,
-        );
+        // At each step, reset variable inclusion counter to zero
+        self.variable_inclusion.fill(0);
 
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
-        let batch_size = if self.tune { batch.0 } else { batch.1 };
-        let lower: usize = 0;
-        let upper = (lower as f64 + batch_size as f64).floor() as usize;
-        let tree_ids = lower..upper;
-        let lower = if upper >= self.params.n_trees {
-            0
+        let batch_size = if self.tune {
+            (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize
         } else {
-            upper
+            (self.params.n_trees as f64 * self.params.batch.1).ceil() as usize
         };
 
-        // let mu = self.data.y().mean().unwrap() / (self.params.n_particles as f64);
+        // Determine tree_ids based on tuning status
+        let upper = (self.lower + batch_size).min(self.params.n_trees);
+        // Determine range of tree_ids based on tuning status
+        let tree_ids = self.lower..upper;
+        self.lower = if upper < self.params.n_trees {
+            upper
+        } else {
+            0
+        };
+
         let mu = self.data.y().mean().unwrap();
 
-        // Modify each tree sequentially
-        // for tree_id in tree_ids {
-        for tree_id in 0..self.params.n_trees {
+        // Mutate each tree sequentially
+        for tree_id in tree_ids {
+            self.iter += 1;
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
 
@@ -198,26 +187,16 @@ impl PgBartState {
             // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
 
-            // Create a vector of mutable references to unfinished particles
-            let mut unfinished_particles: Vec<&mut Particle> = local_particles
-                .iter_mut()
-                .skip(1) // Skip the first particle
-                .filter(|p| !p.finished()) // Only include unfinished particles
-                .collect();
-
             // Grow each particle until the probability that the node in this particle
             // will remain a leaf node is "high"
-            while !unfinished_particles.is_empty() {
-                // Only retain the elements for which the closure returns true
-                unfinished_particles.retain_mut(|p| {
+            local_particles.iter_mut().skip(1).for_each(|particle| {
+                while !particle.finished() {
                     // Attempt to grow the particle
-                    if p.grow(&self.data.X(), self) {
-                        self.update_weight(p, &predictions_minus_old);
+                    if particle.grow(&self.data.X(), self) {
+                        self.update_weight(particle, &predictions_minus_old);
                     }
-                    // Return unfinished particles
-                    !p.finished()
-                });
-            }
+                }
+            });
 
             // Normalize log-likelihood and resample particles
             let normalized_weights = self.normalize_weights(&local_particles);
@@ -235,16 +214,24 @@ impl PgBartState {
 
             self.predictions = updated_preds;
 
+            // During tuning, update feature split probability and leaf standard deviation
+            if self.tune {
+                self.update_splitting_probability(&new_particle);
+
+                // TODO!!!
+                // if self.iter > 2 {
+                //     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec())[0];
+                //     println!("leaf_sd: {}", self.params.leaf_sd);
+                // } else {
+                //     self.tuning_stats.update(&new_particle_preds.to_vec());
+                // }
+            } else {
+                self.update_variable_inclusion(&new_particle);
+            }
+            // println!("variable_inclusion: {:?}", self.variable_inclusion);
+
             // Replace tree M_i with the new particle
             self.particles[tree_id] = new_particle;
-
-            // TODO: !!!!
-            // Update variable inclusion
-            // self.update_variable_inclusion(&new_particle.tree)
-
-            // if self.tune {
-            //     self.update_probabilities();
-            //     }
         }
     }
 
@@ -365,7 +352,29 @@ impl PgBartState {
         particles.swap_remove(index)
     }
 
-    /// Returns a borrowed reference to predictions.
+    /// Updates the probabilities of sampling each covariate if in the tuning phase
+    fn update_splitting_probability(&mut self, particle: &Particle) {
+        self.tree_ops.splitting_probs = normalized_cumsum(&self.tree_ops.alpha_vec);
+
+        particle.tree.feature.iter().for_each(|&idx| {
+            if let Some(alpha) = self.tree_ops.alpha_vec.get_mut(idx as usize) {
+                *alpha += 1.0;
+            }
+        });
+    }
+
+    pub fn update_variable_inclusion(&mut self, particle: &Particle) {
+        particle.tree.feature.iter().for_each(|&idx| {
+            self.variable_inclusion[idx] += 1;
+        });
+    }
+
+    /// Returns variable inclusion counter.
+    pub fn variable_inclusion(&self) -> &Vec<i32> {
+        &self.variable_inclusion
+    }
+
+    /// Returns a borrowed reference to predictions (sum of trees).
     pub fn predictions(&self) -> &Array1<f64> {
         &self.predictions
     }

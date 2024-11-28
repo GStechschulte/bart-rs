@@ -101,18 +101,6 @@ impl TreeSamplingOps {
             1 => mu[0] / m as f64 + norm,
             _ => response.compute_leaf_value(mu, m, norm),
         }
-
-        // match (mu.len(), response) {
-        //     (0, _) => 0.0,
-        //     (1, _) => mu[0] / m as f64 + norm,
-        //     (2, Response::Constant) | (2, Response::Linear) => {
-        //         mu.iter().sum::<f64>() / (2.0 * m as f64) + norm
-        //     }
-        //     (len @ 3.., Response::Constant) => {
-        //         mu.iter().sum::<f64>() / (len as f64 * m as f64) + norm
-        //     }
-        //     (_len @ 3.., Response::Linear) => todo!("Implement fast_linear_fit..."),
-        // }
     }
 
     /// Sample the index of a feature to split on.
