@@ -1,10 +1,12 @@
 #![allow(non_snake_case)]
 
+mod data;
+
 extern crate pg_bart;
 
-use crate::data::ExternalData;
-
 use std::str::FromStr;
+
+use crate::data::ExternalData;
 
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::ops::Response;
@@ -12,8 +14,10 @@ use pg_bart::pgbart::{PgBartSettings, PgBartState};
 use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 use pyo3::prelude::*;
 
-mod data;
-
+/// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
+/// the Particle Gibbs sampler.
+///
+/// This class is `unsendable`, i.e., it cannot be sent across threads safely.
 #[pyclass(unsendable)]
 struct StateWrapper {
     state: PgBartState,
@@ -33,6 +37,7 @@ fn initialize(
     n_particles: usize,
     leaf_sd: f64,
     batch: (f64, f64),
+    leaves_shape: usize,
 ) -> PyResult<StateWrapper> {
     // Heap allocation because size of 'ExternalData' is not known at compile time
     let data = Box::new(ExternalData::new(X, y, logp));
@@ -70,14 +75,25 @@ fn initialize(
 }
 
 #[pyfunction]
-fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) -> &'py PyArray1<f64> {
+fn step<'py>(
+    py: Python<'py>,
+    wrapper: &mut StateWrapper,
+    tune: bool,
+) -> (&'py PyArray1<f64>, &'py PyArray1<i32>) {
+    // Update whether or not pm.sampler is in tuning phase or not
     wrapper.state.tune = tune;
+    // Run the Particle Gibbs sampler
     wrapper.state.step();
 
+    // Get predictions (sum of trees) and convert to PyArray
     let predictions = wrapper.state.predictions();
-    let py_array = PyArray1::from_array(py, &predictions.view());
+    let py_preds_array = PyArray1::from_array(py, &predictions.view());
 
-    py_array
+    // Get variable inclusion counter and convert to PyArray
+    let variable_inclusion = wrapper.state.variable_inclusion().clone();
+    let py_variable_inclusion_array = PyArray1::from_vec(py, variable_inclusion);
+
+    (py_preds_array, py_variable_inclusion_array)
 }
 
 #[pymodule]
