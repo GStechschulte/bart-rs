@@ -1,14 +1,16 @@
+//! Provides a wrapper around a `DecisionTree` along with several
+//! fields for managing state and the growing of trees during sampling.
 #![allow(non_snake_case)]
+
+use std::collections::{HashSet, VecDeque};
+
+use ndarray::{Array1, Array2};
 
 use crate::{
     pgbart::PgBartState,
     split_rules::{SplitRule, SplitRuleType},
     tree::DecisionTree,
 };
-
-use std::collections::{HashSet, VecDeque};
-
-use ndarray::{Array1, Array2};
 
 /// SampleIndices tracks which training sample belong to node `i`.
 #[derive(Debug)]
@@ -71,13 +73,13 @@ impl Weight {
         }
     }
 
-    // Sets the log-weight and log-likelihood of this particle to a fixed value
+    /// Sets the log-weight and log-likelihood of this particle to a fixed value
     pub fn set(&mut self, log_likelihood: f64) {
         self.log_w = log_likelihood;
         self.log_likelihood = log_likelihood;
     }
 
-    // Updates the log-weight of this particle and sets the log-likelohood to a new value
+    /// Updates the log-weight of this particle and sets the log-likelohood to a new value
     pub fn update(&mut self, log_likelihood: f64) {
         self.log_w += log_likelihood - self.log_likelihood;
         self.log_likelihood = log_likelihood;

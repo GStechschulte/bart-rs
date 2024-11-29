@@ -6,13 +6,13 @@ extern crate pg_bart;
 
 use std::str::FromStr;
 
-use crate::data::ExternalData;
-
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::ops::Response;
 use pg_bart::pgbart::{PgBartSettings, PgBartState};
 use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 use pyo3::prelude::*;
+
+use crate::data::ExternalData;
 
 /// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
 /// the Particle Gibbs sampler.

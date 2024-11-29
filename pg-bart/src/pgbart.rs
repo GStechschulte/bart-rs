@@ -2,14 +2,7 @@
 //!
 //! Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 //! struct, and then iterate (step) on this PgBartState.
-
 #![allow(non_snake_case)]
-
-use crate::data::PyData;
-use crate::math::{normalized_cumsum, RunningStd};
-use crate::ops::{Response, TreeSamplingOps};
-use crate::particle::Particle;
-use crate::split_rules::SplitRuleType;
 
 use core::f64;
 
@@ -17,6 +10,12 @@ use ndarray::Array1;
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal, Uniform};
+
+use crate::data::PyData;
+use crate::math::{normalized_cumsum, RunningStd};
+use crate::ops::{Response, TreeSamplingOps};
+use crate::particle::Particle;
+use crate::split_rules::SplitRuleType;
 
 /// PgBartSetting are used to initialize a new PgBartState
 ///
