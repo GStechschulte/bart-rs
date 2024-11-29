@@ -8,7 +8,7 @@
 use crate::data::PyData;
 use crate::math::{normalized_cumsum, RunningStd};
 use crate::ops::{Response, TreeSamplingOps};
-use crate::particle::{Particle, ParticleParams};
+use crate::particle::Particle;
 use crate::split_rules::SplitRuleType;
 
 use core::f64;
@@ -35,6 +35,7 @@ pub struct PgBartSettings {
 }
 
 impl PgBartSettings {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_trees: usize,
         n_particles: usize,
@@ -106,10 +107,7 @@ impl PgBartState {
 
         // Particles can grow (mutate)
         let particles = (0..params.n_trees)
-            .map(|_| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols());
-                Particle::new(p_params, leaf_value, X.nrows())
-            })
+            .map(|_| Particle::new(leaf_value, X.nrows()))
             .collect();
 
         // Tree sampling operations
@@ -244,8 +242,7 @@ impl PgBartState {
         // PgBartState::new(...)
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
-                let p_params = ParticleParams::new(X.nrows(), X.ncols());
-                let mut particle = Particle::new(p_params, leaf_value, X.nrows());
+                let mut particle = Particle::new(leaf_value, X.nrows());
 
                 if i == 0 {
                     self.update_weight(&mut particle, sum_trees_noi);
@@ -298,6 +295,7 @@ impl PgBartState {
         let resampled_indices = self.systematic_resample(&weights[1..], num_particles - 1);
 
         // Collect resampled particles
+        #[allow(clippy::filter_map_bool_then)]
         resampled_particles.extend(
             resampled_indices
                 .into_iter()
@@ -306,6 +304,7 @@ impl PgBartState {
 
         // Remove remaining elements (because of the logic inside of .filter_map above) in particles
         // and add to resampled_particles
+        #[allow(clippy::extend_with_drain)]
         resampled_particles.extend(particles.drain(..));
 
         resampled_particles
@@ -357,7 +356,7 @@ impl PgBartState {
         self.tree_ops.splitting_probs = normalized_cumsum(&self.tree_ops.alpha_vec);
 
         particle.tree.feature.iter().for_each(|&idx| {
-            if let Some(alpha) = self.tree_ops.alpha_vec.get_mut(idx as usize) {
+            if let Some(alpha) = self.tree_ops.alpha_vec.get_mut(idx) {
                 *alpha += 1.0;
             }
         });
