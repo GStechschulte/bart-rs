@@ -10,22 +10,6 @@ use std::collections::{HashSet, VecDeque};
 
 use ndarray::{Array1, Array2};
 
-/// Particle parameters
-#[derive(Debug)]
-pub struct ParticleParams {
-    n_points: usize,
-    n_features: usize,
-}
-
-impl ParticleParams {
-    pub fn new(n_points: usize, n_features: usize) -> Self {
-        Self {
-            n_points,
-            n_features,
-        }
-    }
-}
-
 /// SampleIndices tracks which training sample belong to node `i`.
 #[derive(Debug)]
 pub struct SampleIndices {
@@ -105,20 +89,18 @@ impl Weight {
 /// and the weight of the Particle
 #[derive(Debug)]
 pub struct Particle {
-    pub params: ParticleParams,
     pub tree: DecisionTree,
     pub indices: SampleIndices,
     pub weight: Weight,
 }
 
 impl Particle {
-    pub fn new(params: ParticleParams, init_value: f64, num_samples: usize) -> Self {
+    pub fn new(init_value: f64, num_samples: usize) -> Self {
         let tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
 
         Self {
-            params,
             tree,
             indices,
             weight,
