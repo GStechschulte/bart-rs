@@ -1,16 +1,13 @@
-use pg_bart::split_rules::{OneHotSplit, SplitRule};
-
 fn main() {
-    let feature_values: Vec<i32> = vec![1, 1, 1, 1];
-    let rule = OneHotSplit;
+    let preds = vec![0.5, 0.25, 0.75];
 
-    let split_value = rule.sample_split_value(&feature_values);
-    assert_eq!(split_value, None);
+    let mean = vec![0.1; 3];
 
-    println!("{:?}", split_value);
+    let res: Vec<f64> = preds
+        .iter()
+        .zip(mean.iter())
+        .map(|(&a, &b)| a - b)
+        .collect();
 
-    let static_split_value = 1_i32;
-    let (left, right) = rule.divide(&feature_values, &static_split_value);
-
-    println!("{:?}, {:?}", left, right);
+    println!("mean: {:?}", res);
 }

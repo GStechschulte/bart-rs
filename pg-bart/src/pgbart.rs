@@ -132,7 +132,7 @@ impl PgBartState {
             tune: true,
             tuning_stats: RunningStd::new(X.nrows()),
             lower: 0,
-            iter: 1,
+            iter: 0,
         }
     }
 
@@ -169,6 +169,7 @@ impl PgBartState {
         };
 
         let mu = self.data.y().mean().unwrap();
+        println!("tree_ids: {:?}", tree_ids);
 
         // Mutate each tree sequentially
         for tree_id in tree_ids {
@@ -208,20 +209,26 @@ impl PgBartState {
             // Update the sum of trees
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
+            // println!("updated_preds: {:?}", updated_preds);
 
-            self.predictions = updated_preds;
+            println!("iter: {}, leaf_std: {:?}", self.iter, self.params.leaf_sd);
+            println!("new particle preds: {:?}", new_particle_preds);
 
             // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
-                self.update_splitting_probability(&new_particle);
+                if self.iter > self.params.n_trees {
+                    self.update_splitting_probability(&new_particle);
+                    // println!("self.tree_ops.alpha_vec: {:?}", self.tree_ops.alpha_vec);
+                }
 
-                // TODO!!!
-                // if self.iter > 2 {
-                //     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec())[0];
-                //     println!("leaf_sd: {}", self.params.leaf_sd);
-                // } else {
-                //     self.tuning_stats.update(&new_particle_preds.to_vec());
-                // }
+                if self.iter > 2 {
+                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec())[0];
+                    println!("updated leaf_std: {}", self.params.leaf_sd);
+                } else {
+                    // Update state of tuning statistics, but do not assign a new leaf
+                    // standard deviation to self.params.leaf_sd
+                    self.tuning_stats.update(&new_particle_preds.to_vec());
+                }
             } else {
                 self.update_variable_inclusion(&new_particle);
             }
@@ -229,6 +236,7 @@ impl PgBartState {
 
             // Replace tree M_i with the new particle
             self.particles[tree_id] = new_particle;
+            self.predictions = updated_preds;
         }
     }
 
