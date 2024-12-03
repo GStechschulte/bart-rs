@@ -109,7 +109,7 @@ class PGBART(ArrayStepShared):
         if y_unique.size == 2 and np.all(y_unique == [0, 1]):
             self.leaf_sd *= 3 / self.m**0.5
         else:
-            self.leaf_sd *= self.bart.Y.std() / self.m**0.5
+            self.leaf_sd *= self.bart.Y.std() / self.m ** 0.5
 
         # Compile the PyMC model to create a C callback. This function pointer is
         # passed to Rust and called using Rust's foreign function interface (FFI)
