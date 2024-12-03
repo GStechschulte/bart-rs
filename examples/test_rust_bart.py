@@ -79,6 +79,15 @@ def test_bikes(args):
             random_seed=RANDOM_SEED,
             )
 
+    # Plot convergence diagnostics
+    ax = pmb.plot_convergence(idata_bikes, var_name="mu")
+    plt.show()
+
+    # Plot variable importance
+    pmb.plot_pdp(mu, X=X, Y=Y, grid=(2, 2), func=np.exp, var_discrete=[3])
+    plt.show()
+
+
 def test_coal(args):
     coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
 
@@ -93,8 +102,8 @@ def test_coal(args):
     # express data as the rate number of disaster per year
     Y = hist / 4
 
-    num_trees = 20
-    num_particles = 10
+    num_trees = 100
+    num_particles = 20
 
     with pm.Model() as model_coal:
 
@@ -113,9 +122,9 @@ def test_coal(args):
         y = pm.Normal("y", mu, sigma=sigma, observed=Y)
 
         idata = pm.sample(
-            tune=200,
-            draws=300,
-            chains=4,
+            tune=0,
+            draws=1,
+            chains=1,
             step=[pmb.PGBART([mu], batch=tuple(args.batch), num_particles=num_particles)],
             random_seed=42,
             )
@@ -125,18 +134,16 @@ def test_coal(args):
     # sum_trees = step.astep(1)
 
     _, ax = plt.subplots(nrows=1, ncols=1)
-
     rates = idata.posterior["mu"] / 4
     rate_mean = rates.mean(dim=["draw", "chain"]).to_numpy()
     ax.plot(x_centers, rate_mean, c="black", lw=3)
-    # ax.plot(x_centers, y / 4, "k.", marker="x")
     az.plot_hdi(x_centers, rates, smooth=False)
     az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
     ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
     plt.ylim((0.0, 1.2))
     ax.set_xlabel("years")
     ax.set_ylabel("rate")
-    ax.set_title("bart-rs: using shared step")
+    ax.set_title("bart-rs: tuning")
     plt.show()
 
     # sum_trees = step.astep(1)[0]
