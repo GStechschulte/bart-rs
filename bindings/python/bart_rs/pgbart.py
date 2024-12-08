@@ -53,6 +53,7 @@ class PGBART(ArrayStepShared):
     stats_dtypes_shapes: dict[str, tuple[type, list]] = {
         "variable_inclusion": (object, []),
         "tune": (bool, []),
+        "leaf_std": (object, [])
     }
 
     def __init__(  # noqa: PLR0915
@@ -138,11 +139,11 @@ class PGBART(ArrayStepShared):
     def astep(self, _):
         # t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
-        sum_trees, variable_inclusion = step(self.state, self.tune)
+        sum_trees, variable_inclusion, leaf_std = step(self.state, self.tune)
         # t1 = perf_counter()
 
         # stats = {"time_rs": t1 - t0, "tune": self.tune}
-        stats = {"variable_inclusion": variable_inclusion, "tune": self.tune}
+        stats = {"variable_inclusion": variable_inclusion, "tune": self.tune, "leaf_std": leaf_std}
         return sum_trees, [stats]
 
     @staticmethod
