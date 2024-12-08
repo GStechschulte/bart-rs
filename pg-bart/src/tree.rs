@@ -1,3 +1,7 @@
+//! A Binary Decision Tree is the core data structure for Bayesian Additive
+//! Regression Trees (BART). The tree is implemented using an array (vector)
+//! representation.
+
 use core::fmt;
 use std::cmp::Ordering;
 
@@ -42,8 +46,8 @@ impl DecisionTree {
     /// - `value`. Stores output values for the i'th node
     pub fn new(init_value: f64) -> Self {
         Self {
-            feature: vec![0],     // Initialize with a placeholder feature
-            threshold: vec![0.0], // Initialize with a placeholder threshold
+            feature: vec![0],
+            threshold: vec![0.0],
             value: vec![init_value],
         }
     }

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
+from scipy.special import y1
 
 import bart_rs as pmb
 
@@ -79,6 +80,15 @@ def test_bikes(args):
             random_seed=RANDOM_SEED,
             )
 
+    # Plot convergence diagnostics
+    ax = pmb.plot_convergence(idata_bikes, var_name="mu")
+    plt.show()
+
+    # Plot variable importance
+    pmb.plot_pdp(mu, X=X, Y=Y, grid=(2, 2), func=np.exp, var_discrete=[3])
+    plt.show()
+
+
 def test_coal(args):
     coal = np.loadtxt("/Users/gabestechschulte/Documents/repos/BART/experiments/coal.csv")
 
@@ -112,38 +122,60 @@ def test_coal(args):
 
         y = pm.Normal("y", mu, sigma=sigma, observed=Y)
 
-        idata = pm.sample(
-            tune=200,
-            draws=300,
-            chains=4,
-            step=[pmb.PGBART([mu], batch=tuple(args.batch), num_particles=num_particles)],
-            random_seed=42,
-            )
+        # idata = pm.sample(
+        #     tune=0,
+        #     draws=500,
+        #     chains=1,
+        #     step=[pmb.PGBART([mu], batch=tuple(args.batch), num_particles=num_particles)],
+        #     random_seed=42,
+        #     )
 
-        # step = pmb.PGBART([mu], num_particles=10)
+        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=num_particles)
 
-    # sum_trees = step.astep(1)
-
-    _, ax = plt.subplots(nrows=1, ncols=1)
-
-    rates = idata.posterior["mu"] / 4
-    rate_mean = rates.mean(dim=["draw", "chain"]).to_numpy()
-    ax.plot(x_centers, rate_mean, c="black", lw=3)
-    # ax.plot(x_centers, y / 4, "k.", marker="x")
-    az.plot_hdi(x_centers, rates, smooth=False)
-    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
-    ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
-    plt.ylim((0.0, 1.2))
-    ax.set_xlabel("years")
-    ax.set_ylabel("rate")
-    ax.set_title("bart-rs: using shared step")
-    plt.show()
-
-    # sum_trees = step.astep(1)[0]
-    # idx_sort = np.argsort(X.flatten())
-    # plt.scatter(X.flatten()[idx_sort], Y[idx_sort])
-    # plt.plot(X.flatten()[idx_sort], sum_trees[idx_sort], color="black")
+    # _, ax = plt.subplots(nrows=1, ncols=1)
+    # rates = idata.posterior["mu"] / 4
+    # rate_mean = rates.mean(dim=["draw", "chain"]).to_numpy()
+    # ax.plot(x_centers, rate_mean, c="black", lw=3)
+    # ax.scatter(x_centers, Y / 4, marker="x", color="black")
+    # az.plot_hdi(x_centers, rates, smooth=False)
+    # az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
+    # ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
+    # plt.ylim((0.0, 1.2))
+    # ax.set_xlabel("years")
+    # ax.set_ylabel("rate")
+    # ax.set_title("bart-rs")
     # plt.show()
+
+    # sum_trees, stats = step.astep(1)
+
+    leaf_std = []
+    num_draws = 50
+    draws = np.zeros((num_draws, X.shape[0]))
+    rnge = range(0, num_draws)
+    for iter in rnge:
+        sum_trees, stats = step.astep(iter)
+        draws[iter, :] = sum_trees
+        leaf_std.append(stats[0].get("leaf_std"))
+
+    mean_sum_trees = np.mean(draws, axis=0)
+    std_sum_trees = np.std(draws, axis=0)
+    print(std_sum_trees)
+
+    fig, ax = plt.subplots(nrows=1, ncols=2)
+    idx_sort = np.argsort(X.flatten())
+    ax[0].scatter(X.flatten()[idx_sort], Y[idx_sort])
+    ax[0].plot(X.flatten()[idx_sort], mean_sum_trees[idx_sort], color="black")
+    ax[0].fill_between(
+        x=X.flatten()[idx_sort],
+        y1=mean_sum_trees[idx_sort] + std_sum_trees[idx_sort],
+        y2=mean_sum_trees[idx_sort] - std_sum_trees[idx_sort],
+        color="grey",
+        alpha=0.25
+    )
+    ax[1].plot(rnge, leaf_std)
+    ax[0].set_title("bart-rs sum of trees predictions")
+    ax[1].set_title("Leaf standard deviation")
+    plt.show()
 
 def main(args):
 

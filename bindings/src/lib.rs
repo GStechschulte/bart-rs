@@ -6,13 +6,13 @@ extern crate pg_bart;
 
 use std::str::FromStr;
 
-use crate::data::ExternalData;
-
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pg_bart::ops::Response;
 use pg_bart::pgbart::{PgBartSettings, PgBartState};
 use pg_bart::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 use pyo3::prelude::*;
+
+use crate::data::ExternalData;
 
 /// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
 /// the Particle Gibbs sampler.
@@ -43,6 +43,8 @@ fn initialize(
     let data = Box::new(ExternalData::new(X, y, logp));
     let response = Response::from_str(&response).unwrap();
     let mut rules: Vec<SplitRuleType> = Vec::new();
+
+    println!("init leaf_sd: {}", leaf_sd);
 
     for rule in split_rules {
         let split = match rule.as_str() {
@@ -79,7 +81,7 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (&'py PyArray1<f64>, &'py PyArray1<i32>) {
+) -> (&'py PyArray1<f64>, &'py PyArray1<i32>, f64) {
     // Update whether or not pm.sampler is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
@@ -93,7 +95,9 @@ fn step<'py>(
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
     let py_variable_inclusion_array = PyArray1::from_vec(py, variable_inclusion);
 
-    (py_preds_array, py_variable_inclusion_array)
+    let leaf_std = wrapper.state.params.leaf_sd;
+
+    (py_preds_array, py_variable_inclusion_array, leaf_std)
 }
 
 #[pymodule]

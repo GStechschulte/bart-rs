@@ -1,7 +1,5 @@
 extern crate pg_bart;
 
-use pg_bart::data::PyData;
-
 use std::{
     os::raw::{c_double, c_void},
     rc::Rc,
@@ -9,6 +7,8 @@ use std::{
 
 use ndarray::{Array1, Array2};
 use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+
+use pg_bart::data::PyData;
 
 // extern keyword defines the variable (or function) defined in some other program
 // that the Rust executable will be linked with

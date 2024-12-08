@@ -16,17 +16,21 @@ impl RunningStd {
     }
 
     /// Update the running statistics with a new value
-    pub fn update(&mut self, new_value: &[f64]) -> Vec<f64> {
+    pub fn update(&mut self, new_value: &[f64]) -> f64 {
         self.count += 1;
-        let (mean, mean_2, std) = update(self.count, &self.mean, &self.mean_2, new_value);
+        let (mean, mean_2, std) = update_stats(self.count, &self.mean, &self.mean_2, new_value);
         self.mean = mean;
         self.mean_2 = mean_2;
+        // println!(
+        //     "count: {}, mean: {:?}, mean_2: {:?}, std: {:?}",
+        //     self.count, self.mean, self.mean_2, std
+        // );
         compute_mean(&std)
     }
 }
 
 /// Update function to calculate the new mean and mean_2 values
-fn update(
+fn update_stats(
     count: usize,
     mean: &[f64],
     mean_2: &[f64],
@@ -35,13 +39,18 @@ fn update(
     let mut new_mean = vec![0.0; mean.len()];
     let mut new_mean_2 = vec![0.0; mean_2.len()];
 
-    for ((&m, &m2), &nv) in mean.iter().zip(mean_2.iter()).zip(new_value.iter()) {
+    for (i, ((&m, &m2), &nv)) in mean
+        .iter()
+        .zip(mean_2.iter())
+        .zip(new_value.iter())
+        .enumerate()
+    {
         let delta = nv - m;
         let updated_mean = m + delta / count as f64;
         let delta2 = nv - updated_mean;
 
-        new_mean.push(updated_mean);
-        new_mean_2.push(m2 + delta * delta2);
+        new_mean[i] = updated_mean;
+        new_mean_2[i] = m2 + delta * delta2;
     }
 
     let std: Vec<f64> = new_mean_2
@@ -53,13 +62,9 @@ fn update(
 }
 
 /// Calculate the mean of the array
-fn compute_mean(ari: &[f64]) -> Vec<f64> {
-    if ari.len() == 1 {
-        vec![ari[0]]
-    } else {
-        let sum: f64 = ari.iter().sum();
-        vec![sum / ari.len() as f64]
-    }
+fn compute_mean(ari: &[f64]) -> f64 {
+    let sum: f64 = ari.iter().sum();
+    sum / ari.len() as f64
 }
 
 pub fn normalized_cumsum(v: &[f64]) -> Vec<f64> {

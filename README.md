@@ -21,20 +21,8 @@ vectors only apply to split nodes. The values for leaf nodes in these arrays are
 
 In this section, the architecture of `bart-rs` is given.
 
-### Traits
+TODO...
 
-Traits, together with generics, are the bread and butter of Rust programming. Traits allow you to define shared functionality for Rust types.
+## Seeding RNGs
 
-### Errors
-
-Rust groups errors into two main categories: (1) recoverable, and (2) non-recoverable. For errors that are recoverable, we most likely
-want to report the problem to the user and retry the operation. Unrecoverable errors are always symptoms of bugs such as trying to access
-a location beyond the end of an array.
-
-In `bart-rs` if a function or method can fail, it will have a return type `Result<T, E>`. The Result type indicates
-possible failure.
-
-In particular, there are ... areas of possible failure.
-
-- **Growing of particles.** During the growing of particles there can be particle growth `Ok(true)`, no particle growth, `Ok(false)`
-and unsuccessful particle growth as a result of some error being raised `Err(ParticleError)`.
+The implementation of BART utilizes randomness in the growing of trees. The `thread_rng` function from the `randr_distr` crate provides a thread-local random number generator that is automatically seeded by the operating system or environment, ensuring that it is unique for each thread and run of the program. Therefore, we do not explicitly set a specific seed, and expect different values, e.g. sampled values from a Normal distribution, each time the program is ran.

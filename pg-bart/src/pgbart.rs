@@ -2,14 +2,7 @@
 //!
 //! Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 //! struct, and then iterate (step) on this PgBartState.
-
 #![allow(non_snake_case)]
-
-use crate::data::PyData;
-use crate::math::{normalized_cumsum, RunningStd};
-use crate::ops::{Response, TreeSamplingOps};
-use crate::particle::Particle;
-use crate::split_rules::SplitRuleType;
 
 use core::f64;
 
@@ -17,6 +10,12 @@ use ndarray::Array1;
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal, Uniform};
+
+use crate::data::PyData;
+use crate::math::{normalized_cumsum, RunningStd};
+use crate::ops::{Response, TreeSamplingOps};
+use crate::particle::Particle;
+use crate::split_rules::SplitRuleType;
 
 /// PgBartSetting are used to initialize a new PgBartState
 ///
@@ -133,7 +132,7 @@ impl PgBartState {
             tune: true,
             tuning_stats: RunningStd::new(X.nrows()),
             lower: 0,
-            iter: 1,
+            iter: 0,
         }
     }
 
@@ -150,6 +149,9 @@ impl PgBartState {
     pub fn step(&mut self) {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
+
+        // println!("particle: {:#?}", self.particles);
+        // self.tune = false;
 
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
@@ -170,9 +172,11 @@ impl PgBartState {
         };
 
         let mu = self.data.y().mean().unwrap();
+        println!("tree_ids: {:?}", tree_ids);
 
         // Mutate each tree sequentially
         for tree_id in tree_ids {
+            // for tree_id in 0..self.params.n_trees {
             self.iter += 1;
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
@@ -209,20 +213,27 @@ impl PgBartState {
             // Update the sum of trees
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
+            // println!("updated_preds: {:?}", updated_preds);
 
-            self.predictions = updated_preds;
+            println!("iter: {}, leaf_std: {:?}", self.iter, self.params.leaf_sd);
+            // println!("new particle preds: {:?}", new_particle_preds);
+            // println!("updated preds: {:?}", updated_preds);
 
             // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
-                self.update_splitting_probability(&new_particle);
+                if self.iter > self.params.n_trees {
+                    self.update_splitting_probability(&new_particle);
+                    // println!("self.tree_ops.alpha_vec: {:?}", self.tree_ops.alpha_vec);
+                }
 
-                // TODO!!!
-                // if self.iter > 2 {
-                //     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec())[0];
-                //     println!("leaf_sd: {}", self.params.leaf_sd);
-                // } else {
-                //     self.tuning_stats.update(&new_particle_preds.to_vec());
-                // }
+                if self.iter > 2 {
+                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
+                    println!("updated leaf_std: {}", self.params.leaf_sd);
+                } else {
+                    // Update state of tuning statistics, but do not assign a new leaf
+                    // standard deviation to self.params.leaf_sd
+                    self.tuning_stats.update(&new_particle_preds.to_vec());
+                }
             } else {
                 self.update_variable_inclusion(&new_particle);
             }
@@ -230,6 +241,7 @@ impl PgBartState {
 
             // Replace tree M_i with the new particle
             self.particles[tree_id] = new_particle;
+            self.predictions = updated_preds;
         }
     }
 
@@ -257,9 +269,10 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
-        // To update the weight, the grown Particle needs to make predictions
+        // To update the weight, the grown Particle first needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.evaluate_logp(preds);
+        // println!("log_likelihood: {}", log_likelihood);
 
         particle.weight.set(log_likelihood);
     }
