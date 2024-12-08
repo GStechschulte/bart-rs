@@ -42,11 +42,7 @@ impl ResponseStrategy for Response {
 pub struct ConstantResponse;
 impl ResponseStrategy for ConstantResponse {
     fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
-        match mu.len() {
-            2 => mu.iter().sum::<f64>() / (2.0 * m as f64) + norm,
-            _len @ 3.. => mu.iter().sum::<f64>() / (mu.len() as f64 * m as f64) + norm,
-            _ => unreachable!("Constant response requires at least 2 values."),
-        }
+        (mu.iter().sum::<f64>() / mu.len() as f64) / m as f64 + norm
     }
 }
 
@@ -75,12 +71,19 @@ impl TreeSamplingOps {
     /// Sample a boolean flag indicating if a node should be split or not.
     ///
     /// The deeper a leaf node, the greater the prior probability it will
-    /// remain a leaf node.
+    /// remain a leaf node. The probability a node being a leaf node is
+    /// given by `(1 - (p(being a split node))`.
     pub fn sample_expand_flag(&self, depth: usize) -> bool {
-        let mut rng = rand::thread_rng();
-        let p = 1. - (self.alpha * (1. + depth as f64).powf(-self.beta));
+        if depth == 0 {
+            // println!("depth: {}, probs: {}", depth, 0.0);
+            return true;
+        }
 
-        p < rng.gen::<f64>()
+        let mut rng = rand::thread_rng();
+        let leaf_node_probs = 1. - (self.alpha * ((1. + (depth - 1) as f64).powf(-self.beta)));
+        // println!("depth: {}, probs: {}", depth, leaf_node_probs);
+
+        leaf_node_probs < rng.gen::<f64>()
     }
 
     /// Sample a Gaussian distributed value for a leaf node.
@@ -94,7 +97,14 @@ impl TreeSamplingOps {
         response: &Response,
     ) -> f64 {
         let mut rng = thread_rng();
-        let norm = self.normal.sample(&mut rng) * leaf_sd;
+        let norm = self.normal.sample(&mut rng);
+
+        // println!("--- sample_leaf_value ---");
+        // println!("m: {}", m);
+        // println!("mu.len(): {}", mu.len());
+        // println!("norm: {}, leaf_sd: {}", norm, leaf_sd);
+
+        let norm = norm * leaf_sd;
 
         match mu.len() {
             0 => 0.0,
