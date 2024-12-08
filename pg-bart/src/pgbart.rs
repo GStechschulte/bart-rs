@@ -150,6 +150,9 @@ impl PgBartState {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
 
+        // println!("particle: {:#?}", self.particles);
+        // self.tune = false;
+
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
         let batch_size = if self.tune {
@@ -173,6 +176,7 @@ impl PgBartState {
 
         // Mutate each tree sequentially
         for tree_id in tree_ids {
+            // for tree_id in 0..self.params.n_trees {
             self.iter += 1;
             // Immutable borrow of the particle (aka tree) to modify
             let selected_particle = &self.particles[tree_id];
@@ -212,7 +216,8 @@ impl PgBartState {
             // println!("updated_preds: {:?}", updated_preds);
 
             println!("iter: {}, leaf_std: {:?}", self.iter, self.params.leaf_sd);
-            println!("new particle preds: {:?}", new_particle_preds);
+            // println!("new particle preds: {:?}", new_particle_preds);
+            // println!("updated preds: {:?}", updated_preds);
 
             // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
@@ -222,7 +227,7 @@ impl PgBartState {
                 }
 
                 if self.iter > 2 {
-                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec())[0];
+                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
                     println!("updated leaf_std: {}", self.params.leaf_sd);
                 } else {
                     // Update state of tuning statistics, but do not assign a new leaf
@@ -264,9 +269,10 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
-        // To update the weight, the grown Particle needs to make predictions
+        // To update the weight, the grown Particle first needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.evaluate_logp(preds);
+        // println!("log_likelihood: {}", log_likelihood);
 
         particle.weight.set(log_likelihood);
     }

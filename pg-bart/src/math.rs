@@ -16,15 +16,15 @@ impl RunningStd {
     }
 
     /// Update the running statistics with a new value
-    pub fn update(&mut self, new_value: &[f64]) -> Vec<f64> {
+    pub fn update(&mut self, new_value: &[f64]) -> f64 {
         self.count += 1;
         let (mean, mean_2, std) = update_stats(self.count, &self.mean, &self.mean_2, new_value);
         self.mean = mean;
         self.mean_2 = mean_2;
-        println!(
-            "count: {}, mean: {:?}, mean_2: {:?}, std: {:?}",
-            self.count, self.mean, self.mean_2, std
-        );
+        // println!(
+        //     "count: {}, mean: {:?}, mean_2: {:?}, std: {:?}",
+        //     self.count, self.mean, self.mean_2, std
+        // );
         compute_mean(&std)
     }
 }
@@ -62,13 +62,9 @@ fn update_stats(
 }
 
 /// Calculate the mean of the array
-fn compute_mean(ari: &[f64]) -> Vec<f64> {
-    if ari.len() == 1 {
-        vec![ari[0]]
-    } else {
-        let sum: f64 = ari.iter().sum();
-        vec![sum / ari.len() as f64]
-    }
+fn compute_mean(ari: &[f64]) -> f64 {
+    let sum: f64 = ari.iter().sum();
+    sum / ari.len() as f64
 }
 
 pub fn normalized_cumsum(v: &[f64]) -> Vec<f64> {
