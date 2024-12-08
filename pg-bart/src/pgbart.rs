@@ -150,9 +150,6 @@ impl PgBartState {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
 
-        // println!("particle: {:#?}", self.particles);
-        // self.tune = false;
-
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
         let batch_size = if self.tune {
@@ -172,7 +169,6 @@ impl PgBartState {
         };
 
         let mu = self.data.y().mean().unwrap();
-        println!("tree_ids: {:?}", tree_ids);
 
         // Mutate each tree sequentially
         for tree_id in tree_ids {
@@ -213,22 +209,15 @@ impl PgBartState {
             // Update the sum of trees
             let new_particle_preds = &new_particle.predict(&self.data.X());
             let updated_preds = predictions_minus_old + new_particle_preds;
-            // println!("updated_preds: {:?}", updated_preds);
-
-            println!("iter: {}, leaf_std: {:?}", self.iter, self.params.leaf_sd);
-            // println!("new particle preds: {:?}", new_particle_preds);
-            // println!("updated preds: {:?}", updated_preds);
 
             // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
                 if self.iter > self.params.n_trees {
                     self.update_splitting_probability(&new_particle);
-                    // println!("self.tree_ops.alpha_vec: {:?}", self.tree_ops.alpha_vec);
                 }
 
                 if self.iter > 2 {
                     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
-                    println!("updated leaf_std: {}", self.params.leaf_sd);
                 } else {
                     // Update state of tuning statistics, but do not assign a new leaf
                     // standard deviation to self.params.leaf_sd
@@ -237,7 +226,6 @@ impl PgBartState {
             } else {
                 self.update_variable_inclusion(&new_particle);
             }
-            // println!("variable_inclusion: {:?}", self.variable_inclusion);
 
             // Replace tree M_i with the new particle
             self.particles[tree_id] = new_particle;
@@ -272,7 +260,6 @@ impl PgBartState {
         // To update the weight, the grown Particle first needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.evaluate_logp(preds);
-        // println!("log_likelihood: {}", log_likelihood);
 
         particle.weight.set(log_likelihood);
     }

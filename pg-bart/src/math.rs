@@ -21,10 +21,6 @@ impl RunningStd {
         let (mean, mean_2, std) = update_stats(self.count, &self.mean, &self.mean_2, new_value);
         self.mean = mean;
         self.mean_2 = mean_2;
-        // println!(
-        //     "count: {}, mean: {:?}, mean_2: {:?}, std: {:?}",
-        //     self.count, self.mean, self.mean_2, std
-        // );
         compute_mean(&std)
     }
 }

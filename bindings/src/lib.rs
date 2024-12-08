@@ -44,8 +44,6 @@ fn initialize(
     let response = Response::from_str(&response).unwrap();
     let mut rules: Vec<SplitRuleType> = Vec::new();
 
-    println!("init leaf_sd: {}", leaf_sd);
-
     for rule in split_rules {
         let split = match rule.as_str() {
             "ContinuousSplit" => SplitRuleType::Continuous(ContinuousSplit),
