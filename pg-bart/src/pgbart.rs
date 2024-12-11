@@ -209,6 +209,7 @@ impl PgBartState {
             let new_particle_preds = &new_particle.predict(&self.data.X());
             self.predictions = predictions_minus_old + new_particle_preds;
 
+            // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
                 if self.iter > self.params.n_trees {
                     self.update_splitting_probability(&new_particle);
