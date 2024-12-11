@@ -5,7 +5,7 @@
 use core::fmt;
 use std::cmp::Ordering;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DecisionTree {
     pub feature: Vec<usize>,
     pub threshold: Vec<f64>,

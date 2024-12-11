@@ -75,13 +75,11 @@ impl TreeSamplingOps {
     /// given by `(1 - (p(being a split node))`.
     pub fn sample_expand_flag(&self, depth: usize) -> bool {
         if depth == 0 {
-            // println!("depth: {}, probs: {}", depth, 0.0);
             return true;
         }
 
         let mut rng = rand::thread_rng();
         let leaf_node_probs = 1. - (self.alpha * ((1. + (depth - 1) as f64).powf(-self.beta)));
-        // println!("depth: {}, probs: {}", depth, leaf_node_probs);
 
         leaf_node_probs < rng.gen::<f64>()
     }
@@ -97,14 +95,7 @@ impl TreeSamplingOps {
         response: &Response,
     ) -> f64 {
         let mut rng = thread_rng();
-        let norm = self.normal.sample(&mut rng);
-
-        // println!("--- sample_leaf_value ---");
-        // println!("m: {}", m);
-        // println!("mu.len(): {}", mu.len());
-        // println!("norm: {}, leaf_sd: {}", norm, leaf_sd);
-
-        let norm = norm * leaf_sd;
+        let norm = self.normal.sample(&mut rng) * leaf_sd;
 
         match mu.len() {
             0 => 0.0,

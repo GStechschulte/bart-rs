@@ -5,6 +5,7 @@
 #![allow(non_snake_case)]
 
 use core::f64;
+use std::collections::HashSet;
 
 use ndarray::Array1;
 use rand::distributions::WeightedIndex;
@@ -150,9 +151,6 @@ impl PgBartState {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
 
-        // println!("particle: {:#?}", self.particles);
-        // self.tune = false;
-
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
         let batch_size = if self.tune {
@@ -172,77 +170,63 @@ impl PgBartState {
         };
 
         let mu = self.data.y().mean().unwrap();
-        println!("tree_ids: {:?}", tree_ids);
 
-        // Mutate each tree sequentially
-        for tree_id in tree_ids {
-            // for tree_id in 0..self.params.n_trees {
+        // Process each tree using iterators
+        tree_ids.for_each(|tree_id| {
             self.iter += 1;
-            // Immutable borrow of the particle (aka tree) to modify
-            let selected_particle = &self.particles[tree_id];
 
-            // Compute the sum of trees without the old particle we are attempting to replace
+            // Get the selected particle (tree) and compute predictions without it
+            let selected_particle = &self.particles[tree_id];
             let old_predictions = selected_particle.predict(&self.data.X());
             let predictions_minus_old = &self.predictions - &old_predictions;
 
-            // Initialize local particles. These local particles are to be mutated (grown)
-            // Lengths are: self.particles.len() = n_trees and local_particles.len() = n_particles
+            // Initialize local particles
             let mut local_particles = self.initialize_particles(&old_predictions, mu);
 
-            // Grow each particle until the probability that the node in this particle
-            // will remain a leaf node is "high"
-            local_particles.iter_mut().skip(1).for_each(|particle| {
-                while !particle.finished() {
-                    // Attempt to grow the particle
+            // Grow particles until all are finished
+            while local_particles
+                .iter()
+                .skip(1)
+                .any(|particle| !particle.finished())
+            {
+                local_particles.iter_mut().skip(1).for_each(|particle| {
                     if particle.grow(&self.data.X(), self) {
                         self.update_weight(particle, &predictions_minus_old);
                     }
-                }
-            });
+                });
 
-            // Normalize log-likelihood and resample particles
+                // Normalize log-likelihood and resample particles
+                let normalized_weights = self.normalize_weights(&local_particles[1..]);
+                local_particles =
+                    self.resample_particles(&mut local_particles, &normalized_weights);
+            }
+
+            // Normalize weights again and select a particle to replace the current tree
             let normalized_weights = self.normalize_weights(&local_particles);
+            let new_particle = self.select_particle(&mut local_particles, &normalized_weights);
 
-            let mut resampled_particles =
-                self.resample_particles(&mut local_particles, &normalized_weights);
-
-            // Normalize log-likelihood again and select a particle to replace M_i
-            let normalized_weights = self.normalize_weights(&resampled_particles);
-            let new_particle = self.select_particle(&mut resampled_particles, &normalized_weights);
-
-            // Update the sum of trees
+            // Update the sum of trees with the new particle's predictions
             let new_particle_preds = &new_particle.predict(&self.data.X());
-            let updated_preds = predictions_minus_old + new_particle_preds;
-            // println!("updated_preds: {:?}", updated_preds);
+            self.predictions = predictions_minus_old + new_particle_preds;
 
-            println!("iter: {}, leaf_std: {:?}", self.iter, self.params.leaf_sd);
-            // println!("new particle preds: {:?}", new_particle_preds);
-            // println!("updated preds: {:?}", updated_preds);
-
-            // During tuning, update feature split probability and leaf standard deviation
             if self.tune {
                 if self.iter > self.params.n_trees {
                     self.update_splitting_probability(&new_particle);
-                    // println!("self.tree_ops.alpha_vec: {:?}", self.tree_ops.alpha_vec);
                 }
 
                 if self.iter > 2 {
                     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
-                    println!("updated leaf_std: {}", self.params.leaf_sd);
                 } else {
-                    // Update state of tuning statistics, but do not assign a new leaf
-                    // standard deviation to self.params.leaf_sd
+                    // Update tuning statistics without assigning a new leaf standard deviation
                     self.tuning_stats.update(&new_particle_preds.to_vec());
                 }
             } else {
                 self.update_variable_inclusion(&new_particle);
             }
-            // println!("variable_inclusion: {:?}", self.variable_inclusion);
 
-            // Replace tree M_i with the new particle
+            // Replace the current tree with the new particle
             self.particles[tree_id] = new_particle;
-            self.predictions = updated_preds;
-        }
+        });
     }
 
     /// Generate an initial set of particles for _this_ tree.
@@ -251,7 +235,7 @@ impl PgBartState {
         let leaf_value = mu / (self.params.n_trees as f64);
 
         // Create a new vector of Particles with the same ParticleParams passed to
-        // PgBartState::new(...)
+        // PgBartState::new()
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
                 let mut particle = Particle::new(leaf_value, X.nrows());
@@ -272,7 +256,6 @@ impl PgBartState {
         // To update the weight, the grown Particle first needs to make predictions
         let preds = local_preds + &particle.predict(&self.data.X());
         let log_likelihood = self.data.evaluate_logp(preds);
-        // println!("log_likelihood: {}", log_likelihood);
 
         particle.weight.set(log_likelihood);
     }
@@ -282,6 +265,7 @@ impl PgBartState {
     /// The Softmax function is implemented using the log-sum-exp trick to ensure
     /// the normalization of particle weights is numerically stable.
     fn normalize_weights(&self, particles: &[Particle]) -> Vec<f64> {
+        // Skip the first particle
         let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w).collect();
 
         let max_log_weight = log_weights
@@ -303,22 +287,30 @@ impl PgBartState {
     fn resample_particles(&self, particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
         let num_particles = particles.len();
 
-        // Keep first particle (original tree) and get resampled indices
-        let mut resampled_particles = vec![particles.swap_remove(0)];
-        let resampled_indices = self.systematic_resample(&weights[1..], num_particles - 1);
+        // Pre-allocate memory for the resampled particles
+        let mut resampled_particles = Vec::with_capacity(num_particles);
 
-        // Collect resampled particles
-        #[allow(clippy::filter_map_bool_then)]
-        resampled_particles.extend(
-            resampled_indices
-                .into_iter()
-                .filter_map(|idx| (idx < particles.len()).then(|| particles.swap_remove(idx))),
-        );
+        // Retain the first particle
+        resampled_particles.push(particles[0].clone());
 
-        // Remove remaining elements (because of the logic inside of .filter_map above) in particles
-        // and add to resampled_particles
-        #[allow(clippy::extend_with_drain)]
-        resampled_particles.extend(particles.drain(..));
+        // Get resampled indices
+        let resampled_indices = self
+            .systematic_resample(&weights, num_particles - 1)
+            .into_iter()
+            .map(|idx| idx + 1) // Shift indices to skip the first particle
+            .collect::<Vec<_>>();
+
+        let mut seen = HashSet::new();
+        for idx in resampled_indices {
+            if seen.contains(&idx) {
+                // Clone if the particle has already been used
+                resampled_particles.push(particles[idx].clone());
+            } else {
+                // Borrow directly if the particle has not been used
+                resampled_particles.push(particles[idx].clone());
+                seen.insert(idx);
+            }
+        }
 
         resampled_particles
     }

@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// SampleIndices tracks which training sample belong to node `i`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SampleIndices {
     leaf_nodes: HashSet<usize>,       // Set of leaf node indices
     expansion_nodes: VecDeque<usize>, // Nodes that we still can expand
@@ -59,7 +59,7 @@ impl SampleIndices {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Weight {
     pub log_w: f64,
     pub log_likelihood: f64,
@@ -89,7 +89,7 @@ impl Weight {
 /// A Particle wraps a decision tree along with fields for the paricle
 /// parameters, indices of the observed samples that land in node i,
 /// and the weight of the Particle
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Particle {
     pub tree: DecisionTree,
     pub indices: SampleIndices,
