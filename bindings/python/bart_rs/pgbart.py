@@ -11,7 +11,6 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-import ctypes
 
 from time import perf_counter
 from typing import Optional, Tuple
@@ -137,10 +136,11 @@ class PGBART(ArrayStepShared):
         super().__init__(vars, self.compiled_pymc_model.shared)
 
     def astep(self, _):
-        # t0 = perf_counter()
+        t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
         sum_trees, variable_inclusion, leaf_std = step(self.state, self.tune)
-        # t1 = perf_counter()
+        t1 = perf_counter()
+        print(f"step took {t1 - t0} sec.")
 
         # stats = {"time_rs": t1 - t0, "tune": self.tune}
         stats = {"variable_inclusion": variable_inclusion, "tune": self.tune, "leaf_std": leaf_std}
