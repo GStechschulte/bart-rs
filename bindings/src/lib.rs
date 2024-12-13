@@ -79,7 +79,7 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (&'py PyArray1<f64>, &'py PyArray1<i32>, f64) {
+) -> (&'py PyArray1<f64>, &'py PyArray1<i32>) {
     // Update whether or not pm.sampler is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
@@ -93,9 +93,7 @@ fn step<'py>(
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
     let py_variable_inclusion_array = PyArray1::from_vec(py, variable_inclusion);
 
-    let leaf_std = wrapper.state.params.leaf_sd;
-
-    (py_preds_array, py_variable_inclusion_array, leaf_std)
+    (py_preds_array, py_variable_inclusion_array)
 }
 
 #[pymodule]
