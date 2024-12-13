@@ -123,9 +123,9 @@ def test_coal(args):
         y = pm.Normal("y", mu, sigma=sigma, observed=Y)
 
         idata = pm.sample(
-            tune=100,
-            draws=200,
-            chains=1,
+            tune=500,
+            draws=500,
+            chains=4,
             step=[pmb.PGBART([mu], batch=tuple(args.batch), num_particles=num_particles)],
             random_seed=42,
             )
@@ -148,14 +148,14 @@ def test_coal(args):
 
     # sum_trees, stats = step.astep(1)
 
-    # leaf_std = []
+    # time = []
     # num_draws = 500
     # draws = np.zeros((num_draws, X.shape[0]))
     # rnge = range(0, num_draws)
     # for iter in rnge:
     #     sum_trees, stats = step.astep(iter)
     #     draws[iter, :] = sum_trees
-    #     leaf_std.append(stats[0].get("leaf_std"))
+    #     time.append(stats[0].get("time"))
 
     # mean_sum_trees = np.mean(draws, axis=0)
     # std_sum_trees = np.std(draws, axis=0)
@@ -171,7 +171,7 @@ def test_coal(args):
     #     color="grey",
     #     alpha=0.25
     # )
-    # ax[1].plot(rnge, leaf_std)
+    # ax[1].plot(rnge, time)
     # ax[0].set_title("bart-rs sum of trees predictions")
     # ax[1].set_title("Leaf standard deviation")
     # plt.show()
