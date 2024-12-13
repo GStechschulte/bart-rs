@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// SampleIndices tracks which training sample belong to node `i`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SampleIndices {
     leaf_nodes: HashSet<usize>,       // Set of leaf node indices
     expansion_nodes: VecDeque<usize>, // Nodes that we still can expand
@@ -27,7 +27,7 @@ impl SampleIndices {
     /// `leaf_nodes` and `expansion_nodes` start from 0 as this is the
     /// index of the root node, i.e when creating a new Particle, only
     /// the root node is eligible to be grown.
-    fn new(num_samples: usize) -> Self {
+    pub fn new(num_samples: usize) -> Self {
         Self {
             leaf_nodes: HashSet::from([0]),
             expansion_nodes: VecDeque::from([0]),
@@ -59,7 +59,7 @@ impl SampleIndices {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Weight {
     pub log_w: f64,
     pub log_likelihood: f64,
@@ -89,7 +89,7 @@ impl Weight {
 /// A Particle wraps a decision tree along with fields for the paricle
 /// parameters, indices of the observed samples that land in node i,
 /// and the weight of the Particle
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Particle {
     pub tree: DecisionTree,
     pub indices: SampleIndices,
