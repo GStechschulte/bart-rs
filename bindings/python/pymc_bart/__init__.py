@@ -1,9 +1,9 @@
 import pymc as pm
 
-from bart_rs.bart import BART
-from bart_rs.compile_pymc import CompiledPyMCModel
-from bart_rs.pgbart import PGBART
-from bart_rs.utils import (
+from pymc_bart.bart import BART
+from pymc_bart.compile_pymc import CompiledPyMCModel
+from pymc_bart.pgbart import PGBART
+from pymc_bart.utils import (
     compute_variable_importance,
     plot_convergence,
     plot_dependence,
