@@ -97,7 +97,7 @@ fn step<'py>(
 }
 
 #[pymodule]
-fn bart_rs(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pymc_bart(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
 
