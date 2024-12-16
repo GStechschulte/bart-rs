@@ -9,7 +9,7 @@ import pandas as pd
 import pymc as pm
 from scipy.special import y1
 
-import bart_rs as pmb
+import pymc_bart as pmb
 
 RANDOM_SEED = 8457
 RNG = np.random.RandomState(RANDOM_SEED)
