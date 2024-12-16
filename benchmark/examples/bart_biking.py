@@ -1,7 +1,5 @@
 import argparse
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -17,15 +15,17 @@ def main(args):
     Y = bikes["count"]
 
     with pm.Model() as model_bikes:
-        alpha = pm.Exponential("alpha", 1.)
+        alpha = pm.Exponential("alpha", 1.0)
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
         idata_bikes = pm.sample(
             tune=args.tune,
             draws=args.draws,
-            step=[pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)],
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
             random_seed=RANDOM_SEED,
-            )
+        )
 
 
 if __name__ == "__main__":

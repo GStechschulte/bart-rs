@@ -1,13 +1,21 @@
 #!/bin/bash
 
 source $(conda info --base)/etc/profile.d/conda.sh
-conda activate bart_python
 
 # Source the utils.sh file
 source "$(dirname "$0")/utils.sh"
 
+# Get environment name from command line argument
+ENV_NAME=$1
+if [ -z "$ENV_NAME" ]; then
+    e_error "Please provide environment name as argument"
+    exit 1
+fi
+
+conda activate $ENV_NAME
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULTS_DIR="results/bart_python_benchmark_${TIMESTAMP}"
+RESULTS_DIR="results/${ENV_NAME}_benchmark_${TIMESTAMP}"
 mkdir -p ${RESULTS_DIR}
 
 # Hyperparameters
@@ -17,7 +25,7 @@ TUNE=(1000)
 DRAWS=(1000)
 BATCH=("1.0 1.0" "0.5 0.5" "0.1 0.1")
 CORES=(4) # TODO!!!
-ITERATIONS=5
+ITERATIONS=1
 
 benchmark() {
     local trees=$1
@@ -29,19 +37,19 @@ benchmark() {
     local output_file="${RESULTS_DIR}/benchmark_t${trees}_p${particles}_tune${tune}_draws${draws}_batch${batch// /_}_iter${iter}.txt"
 
     # Time the execution
-        start_time=$(date +%s)
-        python examples/bart_biking.py --trees $trees --particle $particles --tune $tune --draws $draws --batch $batch
-        end_time=$(date +%s)
-        duration=$((end_time - start_time))
+    start_time=$(date +%s)
+    python examples/bart_biking.py --trees $trees --particle $particles --tune $tune --draws $draws --batch $batch
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
 
-        echo $duration > "${output_file}"
+    echo $duration > "${output_file}"
 
-        formatted_duration=$(textifyDuration $duration)
-        e_success "Benchmark completed: trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch, iteration=$iter"
-        e_note "Duration: $formatted_duration"
+    formatted_duration=$(textifyDuration $duration)
+    e_success "Benchmark completed: trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch, iteration=$iter"
+    e_note "Duration: $formatted_duration"
     }
 
-    e_header "Starting BART Benchmark (Python Implementation)"
+    e_header "Starting BART Benchmark ($ENV_NAME Implementation)"
 
 # Run benchmarks
 for trees in "${TREES[@]}"; do
