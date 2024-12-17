@@ -1,4 +1,5 @@
-//! Functions that implement the BART Particle Gibbs initialization and update step.
+//! Functions that implement the BART Particle Gibbs initialization and update step
+//! to grow a decision tree.
 //!
 //! Functions that do Particle Gibbs steps operate by taking as input a PgBartState
 //! struct, and then iterate (step) on this PgBartState.
@@ -18,7 +19,7 @@ use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::Particle;
 use crate::split_rules::SplitRuleType;
 
-/// PgBartSetting are used to initialize a new PgBartState
+/// PgBartSetting are setting parameters used to initialize a new PgBartState
 ///
 /// `split_rules` is a vector of `SplitRuleType` enum variants as the user
 /// may pass different split rule types.
@@ -62,7 +63,7 @@ impl PgBartSettings {
 }
 
 /// PgBartState is the main entry point of the Particle-Gibbs sampler
-/// for Bayesian Additive Regression Trees (BART).
+/// for BART.
 pub struct PgBartState {
     pub data: Box<dyn PyData>,
     pub params: PgBartSettings,
