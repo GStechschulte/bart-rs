@@ -7,7 +7,7 @@ CONDA_RUST_ENV = bart_rust
 
 BENCHMARK_SCRIPT = scripts/benchmark.sh
 
-all: setup benchmark_python benchmark_rust
+all: benchmark_python benchmark_rust
 
 setup: create_python_env create_rust_env
 

@@ -261,4 +261,3 @@ dependencies:
       - pymc-bart==0.1.0
       - pytensor==2.26.4
       - split-rules==0.1.0
-prefix: /Users/gabestechschulte/miniforge3/envs/bart_rust
