@@ -13,11 +13,22 @@
 #   limitations under the License.
 
 [package]
-name = "pg-bart"
+name = "pymc-bart"
 version = "0.1.0"
 edition = "2021"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pymc_bart"
+crate-type = ["cdylib"]
+
+[profile.release]
+debug = true
+lto = true
+codegen-units = 1
+
 [dependencies]
+pyo3 = { version = "0.21.0" }
 ndarray = { version = "0.15.6" }
 numpy = { version = "0.21.0" }
 rand = { version = "0.8.5" }
