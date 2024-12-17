@@ -256,8 +256,9 @@ dependencies:
   - zstandard=0.23.0=py312h721a963_0
   - zstd=1.5.6=hb46c0d2_0
   - pip:
-      - bindings==0.1.0
+      - py-spy==0.4.0
       - pymc==5.19.1
       - pymc-bart==0.1.0
       - pytensor==2.26.4
+      - ruff==0.8.3
       - split-rules==0.1.0

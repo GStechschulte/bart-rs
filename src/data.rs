@@ -1,4 +1,4 @@
-extern crate pg_bart;
+//! Trait implementation to handle data provided by the Python user.
 
 use std::{
     os::raw::{c_double, c_void},
@@ -8,7 +8,13 @@ use std::{
 use ndarray::{Array1, Array2};
 use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 
-use pg_bart::data::PyData;
+/// Handles data provided by the Python user.
+pub trait PyData {
+    #![allow(non_snake_case)]
+    fn X(&self) -> Rc<Array2<f64>>;
+    fn y(&self) -> Rc<Array1<f64>>;
+    fn evaluate_logp(&self, x: Array1<f64>) -> f64;
+}
 
 // extern keyword defines the variable (or function) defined in some other program
 // that the Rust executable will be linked with
