@@ -19,6 +19,7 @@ RESULTS_DIR="results/${ENV_NAME}_benchmark_${TIMESTAMP}"
 mkdir -p ${RESULTS_DIR}
 
 # Hyperparameters
+MODELS=("coal" "bikes" "propensity")
 TREES=(50 100 200)
 PARTICLES=(20 40 60)
 TUNE=(1000)
@@ -33,19 +34,19 @@ benchmark() {
     local tune=$3
     local draws=$4
     local batch="$5"
-    local iter=$6
-    local output_file="${RESULTS_DIR}/benchmark_t${trees}_p${particles}_tune${tune}_draws${draws}_batch${batch// /_}_iter${iter}.txt"
+    local model=$6
+    local output_file="${RESULTS_DIR}/benchmark_t${trees}_p${particles}_tune${tune}_draws${draws}_batch${batch// /_}_model_${model}.txt"
 
     # Time the execution
     start_time=$(date +%s)
-    python examples/bart_biking.py --trees $trees --particle $particles --tune $tune --draws $draws --batch $batch
+    python examples/bart_examples.py --model $model --trees $trees --particle $particles --tune $tune --draws $draws --batch $batch
     end_time=$(date +%s)
     duration=$((end_time - start_time))
 
     echo $duration > "${output_file}"
 
     formatted_duration=$(textifyDuration $duration)
-    e_success "Benchmark completed: trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch, iteration=$iter"
+    e_success "Benchmark completed: trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch, model=$model"
     e_note "Duration: $formatted_duration"
     }
 
@@ -57,9 +58,9 @@ for trees in "${TREES[@]}"; do
         for tune in "${TUNE[@]}"; do
             for draws in "${DRAWS[@]}"; do
                 for batch in "${BATCH[@]}"; do
-                    echo "Running Python implementation benchmark with trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch"
-                    for iter in $(seq 1 $ITERATIONS); do
-                        benchmark "$trees" "$particles" "$tune" "$draws" "$batch" "$iter"
+                    for model in "${MODELS[@]}"; do
+                        echo "Running benchmark on model=$model, trees=$trees, particles=$particles, tune=$tune, draws=$draws, batch=$batch"
+                        benchmark "$trees" "$particles" "$tune" "$draws" "$batch" "$model"
                     done
                 done
             done

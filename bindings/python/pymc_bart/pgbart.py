@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+from pymc.initial_point import PointType
 from pymc.model import Model, modelcontext
 from pymc.pytensorf import inputvars
 from pymc.step_methods.arraystep import ArrayStepShared
@@ -61,10 +62,13 @@ class PGBART(ArrayStepShared):
         num_particles: int = 10,
         batch: Tuple[float, float] = (0.1, 0.1),
         model: Optional[Model] = None,
+        initial_point: PointType | None = None,
+        compile_kwargs: dict | None = None,  # pylint: disable=unused-argument
     ):
 
         model = modelcontext(model)
-        initial_values = model.initial_point()
+        if initial_point is None:
+            initial_point = model.initial_point()
 
         # Get the instances of the BART random variable from the PyMC model
         if vars is None:
@@ -80,10 +84,15 @@ class PGBART(ArrayStepShared):
         else:
             self.X = self.bart.X
 
+        if isinstance(self.bart.Y, Variable):
+            self.Y = self.bart.Y.eval()
+        else:
+            self.Y = self.bart.Y
+
         self.m = self.bart.m
         self.response = self.bart.response
 
-        shape = initial_values[value_bart.name].shape
+        shape = initial_point[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
 
         # Set trees_shape (dim for separate tree structures)

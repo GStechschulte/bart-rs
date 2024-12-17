@@ -1,3 +1,20 @@
+//! Implements tree sampling operations and response strategies for decision
+//! trees.
+//!
+//! This module provides functionality for:
+//! - Sampling decisions in tree construction (split/leaf nodes)
+//! - Computing leaf node values using different response strategies
+//! - Managing tree sampling operations with configurable parameters
+//!
+//! The module implements two main response strategies:
+//! - Constant: Computes the mean response normalized by group size
+//! - Linear: Implements linear response calculations with special handling for different input sizes
+//!
+//! The `TreeSamplingOps` struct provides methods for:
+//! - Sampling expansion decisions for tree nodes
+//! - Computing leaf values with Gaussian noise
+//! - Selecting features for splitting nodes
+
 use std::str::FromStr;
 
 use rand::{self, thread_rng, Rng};

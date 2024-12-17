@@ -1,5 +1,23 @@
-//! Provides a wrapper around a `DecisionTree` along with several
-//! fields for managing state and the growing of trees during sampling.
+//! Provides article-based tree sampling in BART.
+//!
+//! This module provides the core structures and algorithms for implementing
+//! particle-based sampling in decision trees, particularly for use in BART models.
+//! It includes:
+//!
+//! - `SampleIndices`: A structure to track which training samples belong to each tree node.
+//! - `Weight`: A structure to manage particle weights and likelihoods.
+//! - `Particle`: The main structure representing a single particle, which includes a decision tree,
+//!   sample indices, and weight information.
+//!
+//! The module supports operations such as:
+//! - Creating and managing particles
+//! - Growing decision trees within particles
+//! - Predicting outcomes using particles
+//! - Tracking and updating particle weights
+//!
+//! This implementation is particularly useful for Bayesian machine learning applications,
+//! especially those involving BART models and particle-based inference methods.
+
 #![allow(non_snake_case)]
 
 use std::collections::{HashSet, VecDeque};
@@ -45,20 +63,25 @@ impl SampleIndices {
         self.data_indices[idx] = data_rows;
     }
 
+    /// Removes the leaf node and data index of the passed `idx`.
     fn remove_index(&mut self, idx: usize) {
         self.leaf_nodes.remove(&idx);
         self.data_indices[idx].clear();
     }
 
+    /// Checks whether there are any expansion nodes left for
+    /// growing (expanding).
     fn is_empty(&self) -> bool {
         self.expansion_nodes.is_empty()
     }
 
+    /// Removes the first element from `expansion_nodes` and returns it.
     fn pop_expansion_index(&mut self) -> Option<usize> {
         self.expansion_nodes.pop_front()
     }
 }
 
+/// Weight tracks the log weight and likelihood of each `Particle`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Weight {
     pub log_w: f64,
@@ -109,7 +132,7 @@ impl Particle {
         }
     }
 
-    // TODO: Handle different `response`
+    /// Grows _this_ Particle tree.
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
@@ -214,6 +237,10 @@ impl Particle {
         }
     }
 
+    /// Generates predictions for a set of input samples using the particle's decision tree.
+    ///
+    /// Takes a 2D array of features and returns a 1D array of predictions. For each leaf
+    /// node in the tree, assigns that node's value to all samples that fall into that node.
     pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
         let mut predictions = Array1::zeros(X.nrows());
 
@@ -229,6 +256,8 @@ impl Particle {
         predictions
     }
 
+    /// Checks whether there are any expansion nodes left for growing. If false,
+    /// then the Particle is "finished" growing.
     pub fn finished(&self) -> bool {
         self.indices.is_empty()
     }

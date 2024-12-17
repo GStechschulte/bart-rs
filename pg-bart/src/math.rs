@@ -1,3 +1,6 @@
+//! Utility functions for computing averages, standard deviations,
+//! and normalized cumulative sums.
+
 /// A struct to compute the running standard deviation using Welford's algorithm
 pub struct RunningStd {
     count: usize,
