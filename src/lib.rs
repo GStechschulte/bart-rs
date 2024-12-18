@@ -11,7 +11,8 @@
 //   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
-#![warn(missing_docs, clippy::needless_borrow)]
+#![warn(missing_docs)]
+#![allow(non_snake_case)]
 
 //! pg_bart provides an extensible implementation of Bayesian Additive
 //! Regression Trees (BART). BART is a non-parametric method to
@@ -50,6 +51,7 @@ struct StateWrapper {
 }
 
 #[pyfunction]
+#[allow(clippy::too_many_arguments)]
 fn initialize(
     X: PyReadonlyArray2<f64>,
     y: PyReadonlyArray1<f64>,
@@ -63,7 +65,7 @@ fn initialize(
     n_particles: usize,
     leaf_sd: f64,
     batch: (f64, f64),
-    leaves_shape: usize,
+    _leaves_shape: usize,
 ) -> PyResult<StateWrapper> {
     // Heap allocation because size of 'ExternalData' is not known at compile time
     let data = Box::new(ExternalData::new(X, y, logp));
@@ -105,25 +107,25 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (&'py PyArray1<f64>, &'py PyArray1<i32>) {
-    // Update whether or not pm.sampler is in tuning phase or not
+) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>) {
+    // Update whether or not `pm.sampler` is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
     wrapper.state.step();
 
     // Get predictions (sum of trees) and convert to PyArray
     let predictions = wrapper.state.predictions();
-    let py_preds_array = PyArray1::from_array(py, &predictions.view());
+    let py_preds_array = PyArray1::from_array_bound(py, &predictions.view());
 
     // Get variable inclusion counter and convert to PyArray
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
-    let py_variable_inclusion_array = PyArray1::from_vec(py, variable_inclusion);
+    let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
 
     (py_preds_array, py_variable_inclusion_array)
 }
 
 #[pymodule]
-fn pymc_bart(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pymc_bart(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
 

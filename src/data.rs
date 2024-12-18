@@ -48,7 +48,6 @@ impl PyData for ExternalData {
     }
 
     fn evaluate_logp(&self, x: Array1<f64>) -> f64 {
-        let logp = unsafe { (self.logp)(x.as_ptr(), x.len()) };
-        logp
+        unsafe { (self.logp)(x.as_ptr(), x.len()) }
     }
 }

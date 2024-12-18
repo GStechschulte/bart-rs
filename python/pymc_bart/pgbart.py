@@ -138,7 +138,7 @@ class PGBART(ArrayStepShared):
             n_particles=num_particles,
             leaf_sd=self.leaf_sd,
             batch=batch,
-            leaves_shape=self.leaves_shape,
+            _leaves_shape=self.leaves_shape,
         )
 
         self.tune = True
