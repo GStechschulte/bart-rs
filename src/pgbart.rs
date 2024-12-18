@@ -290,7 +290,7 @@ impl PgBartState {
 }
 
 /// Systematic resampling to sample new Particles.
-pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+pub fn resample_particles(particles: &mut [Particle], weights: &[f64]) -> Vec<Particle> {
     let num_particles = particles.len();
 
     // Pre-allocate memory for the resampled particles
@@ -300,7 +300,7 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     resampled_particles.push(particles[0].clone());
 
     // Get resampled indices
-    let resampled_indices = systematic_resample(&weights, num_particles - 1)
+    let resampled_indices = systematic_resample(weights, num_particles - 1)
         .into_iter()
         .map(|idx| idx + 1) // Shift indices to skip the first particle
         .collect::<Vec<_>>();
