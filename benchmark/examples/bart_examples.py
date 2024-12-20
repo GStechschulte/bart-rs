@@ -87,7 +87,7 @@ def test_coal(args):
 
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    for i in range(1500):
+    for i in range(3_000):
         sum_trees, stats = step.astep(i)
         print(f"iter: {i}, time: {stats[0].get('time')}")
 
