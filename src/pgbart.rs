@@ -198,7 +198,7 @@ impl PgBartState {
 
                 // Normalize log-likelihood and resample particles
                 let normalized_weights = normalize_weights(&local_particles[1..]);
-                local_particles = resample_particles(&mut local_particles, &normalized_weights);
+                local_particles = resample_particles_v2(&mut local_particles, &normalized_weights);
             }
 
             // Normalize weights again and select a particle to replace the current tree
@@ -289,7 +289,28 @@ impl PgBartState {
     }
 }
 
+/// Test
+#[inline]
+pub fn resample_particles_v2(particles: &mut [Particle], weights: &[f64]) -> Vec<Particle> {
+    let num_particles = particles.len();
+
+    let mut resampled_particles = Vec::with_capacity(num_particles);
+    resampled_particles.push(particles[0].clone());
+
+    // Get resampled indices using systematic resampling
+    let resampled_indices = systematic_resample(weights, num_particles - 1);
+
+    // Populate resampled particles directly, shifting indices without an iterator chain
+    for idx in resampled_indices {
+        let shifted_idx = idx + 1; // Shift indices to skip the first particle
+        resampled_particles.push(particles[shifted_idx].clone());
+    }
+
+    resampled_particles
+}
+
 /// Systematic resampling to sample new Particles.
+#[inline]
 pub fn resample_particles(particles: &mut [Particle], weights: &[f64]) -> Vec<Particle> {
     let num_particles = particles.len();
 
@@ -324,6 +345,7 @@ pub fn resample_particles(particles: &mut [Particle], weights: &[f64]) -> Vec<Pa
 /// indices of the Particles.
 ///
 /// Note: adapted from https://github.com/nchopin/particles
+#[inline]
 fn systematic_resample(weights: &[f64], num_samples: usize) -> Vec<usize> {
     // Generate a uniform random number and use it to create evenly spaced points
     let mut rng = rand::thread_rng();
