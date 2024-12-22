@@ -81,6 +81,7 @@ def test_coal(args):
         idata = pm.sample(
            tune=args.tune,
            draws=args.draws,
+           chains=1,
            step=[
                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
            ],
