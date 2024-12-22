@@ -94,8 +94,6 @@ def test_coal(args):
     #     sum_trees, stats = step.astep(i)
     #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
-    # print(idata.posterior["mu"] )
-
     _, ax = plt.subplots(figsize=(10, 6))
     rates = idata.posterior["exp_mu"] / 4
     rate_mean = rates.mean(dim=["draw", "chain"])
@@ -107,6 +105,7 @@ def test_coal(args):
     ax.set_xlabel("years")
     ax.set_ylabel("rate")
     plt.show()
+    
 
 def main(args):
 
