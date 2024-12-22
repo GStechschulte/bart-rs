@@ -24,6 +24,7 @@ crate-type = ["cdylib", "rlib"]
 
 [profile.release]
 debug = true
+lto = "fat"
 
 [dependencies]
 pyo3 = { version = "0.21.0" }
