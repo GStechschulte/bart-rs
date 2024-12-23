@@ -1,4 +1,4 @@
-//! Provides article-based tree sampling in BART.
+//! Particle-based tree sampling in BART.
 //!
 //! This module provides the core structures and algorithms for implementing
 //! particle-based sampling in decision trees, particularly for use in BART models.
@@ -17,7 +17,6 @@
 //!
 //! This implementation is particularly useful for Bayesian machine learning applications,
 //! especially those involving BART models and particle-based inference methods.
-
 #![allow(non_snake_case)]
 
 use std::collections::{HashSet, VecDeque};
@@ -132,7 +131,7 @@ impl Particle {
         }
     }
 
-    /// Grows _this_ Particle tree.
+    /// Grows *this* Particle tree.
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
@@ -149,11 +148,12 @@ impl Particle {
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_feature();
-        // Select the rule to be used sample a split value from _this_ feature
+        // Select the split rule assigned for this feature
         let rule = &state.params.split_rules[feature];
 
         let (left_samples, right_samples, split_value) = match rule {
             SplitRuleType::Continuous(continuous_rule) => {
+                // TODO: unnecessary nested iterable?
                 let feature_values: Vec<f64> = samples
                     .iter()
                     .map(|&i| X[[i, feature]])
@@ -161,6 +161,7 @@ impl Particle {
                     .collect();
 
                 if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
+                    // TODO: divide is riddled with vector allocations
                     let (left, right) = continuous_rule.divide(&feature_values, &split_val);
                     (left, right, split_val)
                 } else {
@@ -188,38 +189,31 @@ impl Particle {
             return false;
         }
 
-        let (left_predictions, right_predictions): (Vec<f64>, Vec<f64>) = (
-            left_samples.iter().map(|&i| state.predictions[i]).collect(),
-            right_samples
-                .iter()
-                .map(|&i| state.predictions[i])
-                .collect(),
-        );
+        let left_value = {
+            let predictions = left_samples.iter().map(|&i| state.predictions[i]);
+            let observations = left_samples.iter().map(|&i| X[[i, feature]]);
+            state.tree_ops.sample_leaf_value(
+                &predictions.collect::<Vec<_>>(),
+                &observations.collect::<Vec<_>>(),
+                state.params.n_trees,
+                &state.params.leaf_sd,
+                1, // shape
+                &state.params.response,
+            )
+        };
 
-        let (left_obs, right_obs): (Vec<f64>, Vec<f64>) = (
-            left_samples.iter().map(|&i| X[[i, feature]]).collect(),
-            right_samples.iter().map(|&i| X[[i, feature]]).collect(),
-        );
-
-        // TODO: Use state.params.shape once implemented
-        let shape = 1;
-
-        let left_value = state.tree_ops.sample_leaf_value(
-            &left_predictions,
-            &left_obs,
-            state.params.n_trees,
-            &state.params.leaf_sd,
-            shape,
-            &state.params.response,
-        );
-        let right_value = state.tree_ops.sample_leaf_value(
-            &right_predictions,
-            &right_obs,
-            state.params.n_trees,
-            &state.params.leaf_sd,
-            shape,
-            &state.params.response,
-        );
+        let right_value = {
+            let predictions = right_samples.iter().map(|&i| state.predictions[i]);
+            let observations = right_samples.iter().map(|&i| X[[i, feature]]);
+            state.tree_ops.sample_leaf_value(
+                &predictions.collect::<Vec<_>>(),
+                &observations.collect::<Vec<_>>(),
+                state.params.n_trees,
+                &state.params.leaf_sd,
+                1, // shape
+                &state.params.response,
+            )
+        };
 
         match self
             .tree
@@ -229,11 +223,9 @@ impl Particle {
                 self.indices.remove_index(node_index);
                 self.indices.add_index(left_index, left_samples);
                 self.indices.add_index(right_index, right_samples);
-
                 true
             }
-            // TODO: Proper error handling
-            Err(_e) => false,
+            Err(_) => false,
         }
     }
 

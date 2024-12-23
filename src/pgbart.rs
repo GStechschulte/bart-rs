@@ -6,10 +6,10 @@
 #![allow(non_snake_case)]
 
 use core::f64;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::iter::from_fn;
 
-use ndarray::Array1;
+use ndarray::{Array1, Array2};
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal, Uniform};
@@ -172,18 +172,18 @@ impl PgBartState {
         };
 
         let mu = self.data.y().mean().unwrap();
+        let X = self.data.X();
 
-        // Process each tree using iterators
         tree_ids.for_each(|tree_id| {
             self.iter += 1;
 
             // Get the selected particle (tree) and compute predictions without it
             let selected_particle = &self.particles[tree_id];
-            let old_predictions = selected_particle.predict(&self.data.X());
+            let old_predictions = selected_particle.predict(&X);
             let predictions_minus_old = &self.predictions - &old_predictions;
 
             // Initialize local particles
-            let mut local_particles = self.initialize_particles(&old_predictions, mu);
+            let mut local_particles = self.initialize_particles(&X, &old_predictions, mu);
 
             // Grow particles until all are finished
             while local_particles
@@ -192,7 +192,7 @@ impl PgBartState {
                 .any(|particle| !particle.finished())
             {
                 local_particles.iter_mut().skip(1).for_each(|particle| {
-                    if particle.grow(&self.data.X(), self) {
+                    if particle.grow(&X, self) {
                         self.update_weight(particle, &predictions_minus_old);
                     }
                 });
@@ -207,7 +207,7 @@ impl PgBartState {
             let new_particle = select_particle(&mut local_particles, &normalized_weights);
 
             // Update the sum of trees with the new particle's predictions
-            let new_particle_preds = &new_particle.predict(&self.data.X());
+            let new_particle_preds = &new_particle.predict(&X);
             self.predictions = predictions_minus_old + new_particle_preds;
 
             // During tuning, update feature split probability and leaf standard deviation
@@ -232,12 +232,16 @@ impl PgBartState {
     }
 
     /// Generate an initial set of particles for _this_ tree.
-    fn initialize_particles(&self, sum_trees_noi: &Array1<f64>, mu: f64) -> Vec<Particle> {
-        let X = self.data.X();
+    fn initialize_particles(
+        &self,
+        X: &Array2<f64>,
+        sum_trees_noi: &Array1<f64>,
+        mu: f64,
+    ) -> Vec<Particle> {
         let leaf_value = mu / (self.params.n_trees as f64);
 
         // Create a new vector of Particles with the same ParticleParams passed to
-        // PgBartState::new()
+        // PgBartState::new
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
                 let mut particle = Particle::new(leaf_value, X.nrows());
@@ -291,7 +295,7 @@ impl PgBartState {
     }
 }
 
-/// Systematic resampling to sample new Particles.
+/// Systematic resampling to sample new Particles according to a Particle's weight
 #[inline]
 pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
     let num_particles = particles.len();
@@ -373,18 +377,6 @@ fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Ite
             None
         }
     })
-
-    // Find the indices where the cumulative sum exceeds the evenly spaced points
-    // let mut indices = Vec::with_capacity(num_samples);
-    // let mut j = 0;
-    // for i in 0..num_samples {
-    //     while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64 {
-    //         j += 1;
-    //     }
-    //     indices.push(j);
-    // }
-
-    // indices
 }
 
 /// Sample a Particle proportional to its weight.
