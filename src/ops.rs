@@ -18,11 +18,14 @@
 use std::str::FromStr;
 
 use rand::{self, thread_rng, Rng};
-use rand_distr::{Distribution, Normal, Uniform};
+use rand_distr::{Distribution, Normal};
 
+/// Variants indicate the types of response strategies to compute leaf node values.
 #[derive(Debug)]
 pub enum Response {
+    /// Constant implements the `ConstantResponse` strategy.
     Constant(ConstantResponse),
+    /// Linear implements the `LinearResponse` strategy.
     Linear(LinearResponse),
 }
 
@@ -55,6 +58,8 @@ impl ResponseStrategy for Response {
 // Use unit structs to define an enum variant constructor for which the
 // ResponseStrategy trait can be implemented for as traits cannot be
 // implemented for enum variants as a variant is not a type
+
+/// Leaf node value is the mean of `mu`.
 #[derive(Debug)]
 pub struct ConstantResponse;
 impl ResponseStrategy for ConstantResponse {
@@ -63,6 +68,7 @@ impl ResponseStrategy for ConstantResponse {
     }
 }
 
+/// Leaf node value is computed using least squares.
 #[derive(Debug)]
 pub struct LinearResponse;
 impl ResponseStrategy for LinearResponse {
@@ -75,12 +81,20 @@ impl ResponseStrategy for LinearResponse {
     }
 }
 
+/// Holds parameters and distributions used for sampling-related operations
+/// of BART.
 pub struct TreeSamplingOps {
+    /// Normal distribution to sample Gaussian distributed leaf values.
     pub normal: Normal<f64>,
-    pub uniform: Uniform<f64>,
+    /// Initial...
     pub alpha_vec: Vec<f64>,
+    /// Prior probability over a feature being used as a splitting variable.
     pub splitting_probs: Vec<f64>,
+    /// Parameter contained with [0, 1] used to control node depth during the
+    /// growing of trees.
     pub alpha: f64,
+    /// Parameter contained with [0, infinity] used to control node depth during the
+    /// growing of trees.
     pub beta: f64,
 }
 

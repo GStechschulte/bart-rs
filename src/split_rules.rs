@@ -1,12 +1,5 @@
 //! Split rule trait definitions and implementations for decision trees. The module
 //! supports sampling split values from a set of candidates and dividing data points based on //! the chosen split value.
-//!
-//! Includes:
-//! - `SplitRule`: Trait defining the interface for split rules.
-//! - `ContinuousSplit`: Splitting strategy for continuous variables.
-//! - `OneHotSplit`: Splitting strategy for categorical variables using one-hot encoding.
-//! - `SubsetSplit`: Splitting strategy for subset-based splitting of categorical variables.
-//! - `SplitRuleType`: Enum encapsulating the different split rule types.
 
 use std::f64;
 use std::iter::Iterator;

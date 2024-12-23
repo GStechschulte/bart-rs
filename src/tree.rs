@@ -95,6 +95,7 @@ impl DecisionTree {
     }
 
     /// Computes the depth of _this_ node in the `DecisionTree`.
+    #[inline]
     pub fn node_depth(&self, index: usize) -> usize {
         let mut depth = 0;
         let mut current_index = index;

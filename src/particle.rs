@@ -14,9 +14,6 @@
 //! - Growing decision trees within particles
 //! - Predicting outcomes using particles
 //! - Tracking and updating particle weights
-//!
-//! This implementation is particularly useful for Bayesian machine learning applications,
-//! especially those involving BART models and particle-based inference methods.
 #![allow(non_snake_case)]
 
 use std::collections::{HashSet, VecDeque};
@@ -108,8 +105,8 @@ impl Weight {
     }
 }
 
-/// A Particle wraps a decision tree along with fields for the paricle
-/// parameters, indices of the observed samples that land in node i,
+/// A Particle wraps a `DecisionTree` along with fields for the paricle
+/// parameters, indices of the observed samples that land in node `i`,
 /// and the weight of the Particle
 #[derive(Debug, Clone, PartialEq)]
 pub struct Particle {

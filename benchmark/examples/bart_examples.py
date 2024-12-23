@@ -78,33 +78,33 @@ def test_coal(args):
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
-#        idata = pm.sample(
-#           tune=args.tune,
-#           draws=args.draws,
-#           chains=1,
-#           step=[
-#               pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-#           ],
-#           random_seed=RANDOM_SEED,
-#        )
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=4,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
+    #     step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    for i in range(1500):
-        sum_trees, stats = step.astep(i)
-        #print(f"iter: {i}, time: {stats[0].get('time')}")
+    # for i in range(1500):
+    #     sum_trees, stats = step.astep(i)
+    #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
-    #_, ax = plt.subplots(figsize=(10, 6))
-    #rates = idata.posterior["exp_mu"] / 4
-    #rate_mean = rates.mean(dim=["draw", "chain"])
-    #ax.plot(x_centers, rate_mean, "w", lw=3)
-    #ax.plot(x_centers, y_data / 4, "k.")
-    #az.plot_hdi(x_centers, rates, smooth=False)
-    #az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
-    #ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
-    #ax.set_xlabel("years")
-    #ax.set_ylabel("rate")
-    #plt.show()
-    
+    _, ax = plt.subplots(figsize=(10, 6))
+    rates = idata.posterior["exp_mu"] / 4
+    rate_mean = rates.mean(dim=["draw", "chain"])
+    ax.plot(x_centers, rate_mean, "w", lw=3)
+    ax.plot(x_centers, y_data / 4, "k.")
+    az.plot_hdi(x_centers, rates, smooth=False)
+    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
+    ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
+    ax.set_xlabel("years")
+    ax.set_ylabel("rate")
+    plt.show()
+
 
 def main(args):
 

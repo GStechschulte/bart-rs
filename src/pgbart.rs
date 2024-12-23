@@ -12,7 +12,7 @@ use std::iter::from_fn;
 use ndarray::{Array1, Array2};
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
-use rand_distr::{Distribution, Normal, Uniform};
+use rand_distr::{Distribution, Normal};
 
 use crate::data::PyData;
 use crate::math::{normalized_cumsum, RunningStd};
@@ -80,34 +80,16 @@ pub struct PgBartState {
 
 impl PgBartState {
     /// Creates a `PgBartState` with the given `PgBartSettings` and `PyData`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// // data is ExternalData from the Python user
-    /// let data = Box::new(data);
-    /// // PgBartSettings are passed from the Python user
-    /// let params = PgBartSettings::new(
-    ///     n_trees,
-    ///     n_particles,
-    ///     alpha,
-    ///     batch,
-    ///     split_prior.to_vec().unwrap(),
-    ///     response,
-    ///     );
-    /// let state = PgBartState::new(params, data);
-    /// ```
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
         let X = data.X();
         let y = data.y();
 
-        let m = params.n_trees as f64;
         let mu = y.mean().unwrap();
-        let leaf_value = mu / m;
-        let predictions = Array1::from_elem(y.len(), mu);
-        let variable_inclusion = vec![0; X.ncols()];
+        let leaf_value = mu / params.n_trees as f64;
 
-        // Particles can grow (mutate)
+        let predictions = Array1::from_elem(y.len(), mu);
+
+        // Initialize Particles vector
         let particles = (0..params.n_trees)
             .map(|_| Particle::new(leaf_value, X.nrows()))
             .collect();
@@ -122,7 +104,7 @@ impl PgBartState {
             alpha: params.alpha,
             beta: params.beta,
             normal: Normal::new(0.0, 1.0).unwrap(),
-            uniform: Uniform::new(0.0, 1.0),
+            // uniform: Uniform::new(0.0, 1.0),
         };
 
         Self {
@@ -131,7 +113,7 @@ impl PgBartState {
             tree_ops,
             predictions,
             particles,
-            variable_inclusion,
+            variable_inclusion: vec![0; X.ncols()],
             tune: true,
             tuning_stats: RunningStd::new(X.nrows()),
             lower: 0,
@@ -193,7 +175,7 @@ impl PgBartState {
             {
                 local_particles.iter_mut().skip(1).for_each(|particle| {
                     if particle.grow(&X, self) {
-                        self.update_weight(particle, &predictions_minus_old);
+                        self.update_weight(&X, particle, &predictions_minus_old);
                     }
                 });
 
@@ -247,7 +229,7 @@ impl PgBartState {
                 let mut particle = Particle::new(leaf_value, X.nrows());
 
                 if i == 0 {
-                    self.update_weight(&mut particle, sum_trees_noi);
+                    self.update_weight(X, &mut particle, sum_trees_noi);
                 }
 
                 particle
@@ -259,9 +241,9 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     #[inline]
-    fn update_weight(&self, particle: &mut Particle, local_preds: &Array1<f64>) {
+    fn update_weight(&self, X: &Array2<f64>, particle: &mut Particle, local_preds: &Array1<f64>) {
         // To update the weight, the grown Particle first needs to make predictions
-        let preds = local_preds + &particle.predict(&self.data.X());
+        let preds = local_preds + &particle.predict(X);
         let log_likelihood = self.data.evaluate_logp(preds);
 
         particle.weight.set(log_likelihood);
@@ -278,6 +260,8 @@ impl PgBartState {
         });
     }
 
+    /// Updates variable inclusion by incrementing the feature counter if *this*
+    /// feature was used for splitting.
     pub fn update_variable_inclusion(&mut self, particle: &Particle) {
         particle.tree.feature.iter().for_each(|&idx| {
             self.variable_inclusion[idx] += 1;
