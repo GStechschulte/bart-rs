@@ -7,7 +7,7 @@
 
 use core::f64;
 use std::collections::{HashMap, HashSet};
-use std::mem;
+use std::iter::from_fn;
 
 use ndarray::Array1;
 use rand::distributions::WeightedIndex;
@@ -300,13 +300,13 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     // Move the first particle without cloning
     resampled_particles.push(particles[0].clone());
 
-    let mut index_counts = HashMap::with_capacity(num_particles);
-    for idx in systematic_resample(weights, num_particles - 1)
-        .into_iter()
+    // Resample Particle indices and count number of occurences each index appears
+    let mut index_counts = systematic_resample(weights, num_particles - 1)
         .map(|idx| idx + 1)
-    {
-        *index_counts.entry(idx).or_insert(0) += 1;
-    }
+        .fold(HashMap::with_capacity(num_particles), |mut acc, idx| {
+            *acc.entry(idx).or_insert(0) += 1;
+            acc
+        });
 
     // Stage 1: Process particles that need cloning, i.e. count > 1
     let mut to_remove = Vec::new();
@@ -337,13 +337,17 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
 /// Systematic resampling using weights and number of particles to return
 /// indices of the Particles.
 ///
+/// Returns a vectors (Particle) indices where the cumulative weight sum exceeds
+/// the evenly spaced points with a random offset.
+///
 /// Note: adapted from https://github.com/nchopin/particles
 #[inline]
-fn systematic_resample(weights: &[f64], num_samples: usize) -> Vec<usize> {
+fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Item = usize> + '_ {
     // Generate a uniform random number and use it to create evenly spaced points
     let mut rng = rand::thread_rng();
     let u = rng.gen::<f64>() / num_samples as f64;
 
+    // Compute cumulative sum of Particle weights
     let cumulative_sum = weights
         .iter()
         .scan(0.0, |acc, &x| {
@@ -352,17 +356,35 @@ fn systematic_resample(weights: &[f64], num_samples: usize) -> Vec<usize> {
         })
         .collect::<Vec<f64>>();
 
-    // Find the indices where the cumulative sum exceeds the evenly spaced points
-    let mut indices = Vec::with_capacity(num_samples);
-    let mut j = 0;
-    for i in 0..num_samples {
-        while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64 {
-            j += 1;
-        }
-        indices.push(j);
-    }
+    // Iterator state variables
+    let mut i = 0; // Current sample index
+    let mut j = 0; // Current position in cumulative sum
 
-    indices
+    // from_fn creates a custom iterator that yields the resampled Particle indices
+    from_fn(move || {
+        if i < num_samples {
+            while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64
+            {
+                j += 1;
+            }
+            i += 1;
+            Some(j)
+        } else {
+            None
+        }
+    })
+
+    // Find the indices where the cumulative sum exceeds the evenly spaced points
+    // let mut indices = Vec::with_capacity(num_samples);
+    // let mut j = 0;
+    // for i in 0..num_samples {
+    //     while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64 {
+    //         j += 1;
+    //     }
+    //     indices.push(j);
+    // }
+
+    // indices
 }
 
 /// Sample a Particle proportional to its weight.
