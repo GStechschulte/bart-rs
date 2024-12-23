@@ -79,15 +79,14 @@ def test_coal(args):
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
         idata = pm.sample(
-           tune=args.tune,
-           draws=args.draws,
-           chains=1,
-           step=[
-               pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-           ],
-           random_seed=RANDOM_SEED,
+            tune=args.tune,
+            draws=args.draws,
+            chains=4,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
         )
-
     #     step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
     # for i in range(1500):
@@ -105,7 +104,7 @@ def test_coal(args):
     ax.set_xlabel("years")
     ax.set_ylabel("rate")
     plt.show()
-    
+
 
 def main(args):
 

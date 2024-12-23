@@ -8,11 +8,14 @@ use std::{
 use ndarray::{Array1, Array2};
 use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 
-/// Handles data provided by the Python user.
+/// Interface for interaction with data provided by the Python user.
 pub trait PyData {
     #![allow(non_snake_case)]
+    /// Covariate matrix
     fn X(&self) -> Rc<Array2<f64>>;
+    /// Response (target) vector
     fn y(&self) -> Rc<Array1<f64>>;
+    /// Evaluate log-probability given data `x`
     fn evaluate_logp(&self, x: Array1<f64>) -> f64;
 }
 
@@ -20,6 +23,7 @@ pub trait PyData {
 // that the Rust executable will be linked with
 type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
+/// Container used to store external data passed by the Python user.
 pub struct ExternalData {
     X: Rc<Array2<f64>>,
     y: Rc<Array1<f64>>,
@@ -27,6 +31,7 @@ pub struct ExternalData {
 }
 
 impl ExternalData {
+    /// Creates a new `ExternalData` struct.
     pub fn new(X: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>, logp: usize) -> Self {
         let logp: LogpFunc = unsafe { std::mem::transmute(logp as *const c_void) };
 

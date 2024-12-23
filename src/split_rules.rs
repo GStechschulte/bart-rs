@@ -1,19 +1,5 @@
-//! Split rule trait definitions and implementations for decision trees.
-//!
-//! It includes:
-//! - `SplitRule`: A trait defining the interface for split rules.
-//! - `ContinuousSplit`: An implementation for continuous variables.
-//! - `OneHotSplit`: An implementation for categorical variables using one-hot encoding.
-//! - `SubsetSplit`: A placeholder for subset-based splitting of categorical variables.
-//! - `SplitRuleType`: An enum to encapsulate different split rule types.
-//!
-//! The module supports:
-//! - Sampling split values from a set of candidates.
-//! - Dividing data points based on the chosen split value.
-//! - Handling both continuous and categorical variables.
-//!
-//! This implementation is particularly useful for decision tree algorithms, random forests,
-//! and other tree-based machine learning models.
+//! Split rule trait definitions and implementations for decision trees. The module
+//! supports sampling split values from a set of candidates and dividing data points based on //! the chosen split value.
 
 use std::f64;
 use std::iter::Iterator;
@@ -22,9 +8,12 @@ use rand::Rng;
 
 /// Split rule interface for defining split rule strategies.
 pub trait SplitRule {
+    /// The data type associated with the split rule strategy.
     type Value;
 
+    /// Samples a split value from the candidate points.
     fn sample_split_value(&self, candidates: &[Self::Value]) -> Option<Self::Value>;
+    /// Divides the candidates left and right according to the split value.
     fn divide(
         &self,
         candidates: &[Self::Value],
@@ -84,7 +73,10 @@ impl SplitRule for OneHotSplit {
 /// `link <https://arxiv.org/abs/2211.04459>`__
 pub struct SubsetSplit;
 
+/// Holds the split rule strategies as enum variants.
 pub enum SplitRuleType {
+    /// Continuous implements the `ContinuousSplit` strategy.
     Continuous(ContinuousSplit),
+    /// OneHot implements the `OneHotSplit` strategy.
     OneHot(OneHotSplit),
 }

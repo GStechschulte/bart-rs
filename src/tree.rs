@@ -5,16 +5,23 @@
 use core::fmt;
 use std::cmp::Ordering;
 
+/// A `DecisionTree` is an array-based implementation of the binary decision tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecisionTree {
+    /// Stores the feature index for splitting at the i'th node.
     pub feature: Vec<usize>,
+    /// Stores the threshold value for the i'th node split.
     pub threshold: Vec<f64>,
+    /// Stores output values for the i'th node
     pub value: Vec<f64>,
 }
 
+/// Represents errors related to binary decision tree operations.
 #[derive(Debug)]
 pub enum TreeError {
+    /// When attempting to split a leaf node, if the node is not a leaf.
     NonLeafSplit,
+    /// When attempting to split a leaf node, if the index is valid or not
     InvalidNodeIndex,
 }
 
@@ -40,10 +47,7 @@ impl DecisionTree {
     /// split nodes. In this case, the values of the nodes of the other vectors is
     /// arbitrary. For example, `feature` and `threshold` vectors only apply to
     /// split nodes. The values for leaf nodes in these vectors are therefore
-    /// arbitrary. The three vectors are:
-    /// - `feature`. Stores the feature index for splitting at the i'th node.
-    /// - `threshold`. Stores the threshold value for the i'th node split.
-    /// - `value`. Stores output values for the i'th node
+    /// arbitrary.
     pub fn new(init_value: f64) -> Self {
         Self {
             feature: vec![0],
@@ -91,6 +95,7 @@ impl DecisionTree {
     }
 
     /// Computes the depth of _this_ node in the `DecisionTree`.
+    #[inline]
     pub fn node_depth(&self, index: usize) -> usize {
         let mut depth = 0;
         let mut current_index = index;
@@ -103,6 +108,7 @@ impl DecisionTree {
         depth
     }
 
+    /// Splits a leaf node into an internal node.
     pub fn split_node(
         &mut self,
         node_index: usize,
@@ -130,6 +136,7 @@ impl DecisionTree {
         Ok((left_child_index, right_child_index))
     }
 
+    /// Predict the output given an input `sample`.
     pub fn predict(&self, sample: &[f64]) -> f64 {
         let mut node = 0;
         loop {
