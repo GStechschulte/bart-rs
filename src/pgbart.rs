@@ -25,18 +25,29 @@ use crate::split_rules::SplitRuleType;
 /// `split_rules` is a vector of `SplitRuleType` enum variants as the user
 /// may pass different split rule types.
 pub struct PgBartSettings {
+    /// Number of trees.
     pub n_trees: usize,
+    /// Number of particles.
     pub n_particles: usize,
+    /// alpha parameter to control node depth.
     pub alpha: f64,
+    /// beta parameter to control node depth.
     pub beta: f64,
+    /// Leaf node standard deviation.
     pub leaf_sd: f64,
+    /// Batch size to use during tuning and draws.
     pub batch: (f64, f64),
+    /// Initial prior probability over feature splitting probability.
     pub init_alpha_vec: Vec<f64>,
+    /// Response strategy for computing leaf node response values.
     pub response: Response,
+    /// Split rule strategy to use for sampling threshold (split) values.
     pub split_rules: Vec<SplitRuleType>,
 }
 
 impl PgBartSettings {
+    /// Creates a new `PgBartSettings` struct to be used in BART for growing
+    /// particle trees.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_trees: usize,
@@ -63,18 +74,29 @@ impl PgBartSettings {
     }
 }
 
-/// PgBartState is the main entry point of the Particle-Gibbs sampler
-/// for BART.
+/// PgBartState is the main entry point of the Particle-Gibbs sampler for BART.
 pub struct PgBartState {
+    /// User-provided data (from Python).
     pub data: Box<dyn PyData>,
+    /// Parameters to initialize `PgBartState`.
     pub params: PgBartSettings,
+    /// Container for storing data and functions related to tree
+    /// sampling operations.
     pub tree_ops: TreeSamplingOps,
+    /// Sum of trees (predictions).
     pub predictions: Array1<f64>,
+    /// Particle is a wrapper around a `DecisionTree`.
     pub particles: Vec<Particle>,
+    /// Feature counter for performing feature importance.
     pub variable_inclusion: Vec<i32>,
+    /// Whether to perform tuning before drawing from the posterior.
     pub tune: bool,
+    /// If tuning is true, then updates the tuning statistics such as
+    /// the leaf node value's standard deviation.
     pub tuning_stats: RunningStd,
-    pub lower: usize, // lower manages tree ids during tuning and drawing phases
+    /// Manages tree ids during tuning and drawing phases.
+    pub lower: usize,
+    /// Current iteration of tree growing (includes tuning and draws).
     pub iter: usize,
 }
 
