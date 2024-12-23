@@ -295,41 +295,39 @@ impl PgBartState {
 #[inline]
 pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
     let num_particles = particles.len();
-
-    // Pre-allocate memory for the resampled particles
     let mut resampled_particles = Vec::with_capacity(num_particles);
 
-    // Retain the first particle
+    // Move the first particle without cloning
     resampled_particles.push(particles[0].clone());
 
-    // Get resampled indices
-    let resampled_indices = systematic_resample(weights, num_particles - 1)
+    let mut index_counts = HashMap::with_capacity(num_particles);
+    for idx in systematic_resample(weights, num_particles - 1)
         .into_iter()
-        .map(|idx| idx + 1) // Shift indices to skip the first particle
-        .collect::<Vec<_>>();
-
-    let mut index_counts = HashMap::new();
-    for item in resampled_indices {
-        *index_counts.entry(item).or_insert(0) += 1;
+        .map(|idx| idx + 1)
+    {
+        *index_counts.entry(idx).or_insert(0) += 1;
     }
 
+    // Stage 1: Process particles that need cloning, i.e. count > 1
+    let mut to_remove = Vec::new();
     for (&idx, &count) in &index_counts {
         if count > 1 {
-            for _ in 0..count {
-                resampled_particles.push(particles[idx].clone());
-            }
+            let particle = &particles[idx];
+            resampled_particles.extend((0..count).map(|_| particle.clone()));
+            to_remove.push(idx);
         }
     }
 
-    let filtered_index_counts: HashMap<_, _> = index_counts
-        .into_iter()
-        .filter(|&(_, count)| count <= 1)
-        .collect();
+    // Remove the indices that have already been processed
+    for idx in to_remove {
+        index_counts.remove(&idx);
+    }
 
-    let mut sorted_index_counts: Vec<_> = filtered_index_counts.keys().cloned().collect();
-    sorted_index_counts.sort_by(|a, b| b.cmp(a));
+    // Stage 2:  Move remaining particles without cloning
+    let mut indices: Vec<_> = index_counts.keys().copied().collect();
+    indices.sort_unstable_by(|a, b| b.cmp(a));
 
-    for idx in sorted_index_counts {
+    for idx in indices {
         resampled_particles.push(particles.swap_remove(idx));
     }
 
