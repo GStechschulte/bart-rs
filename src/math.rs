@@ -1,7 +1,7 @@
 //! Utility functions for computing averages, standard deviations,
 //! and normalized cumulative sums.
 
-/// A struct to compute the running standard deviation using Welford's algorithm
+/// Computes the running standard deviation using Welford's algorithm.
 pub struct RunningStd {
     count: usize,
     mean: Vec<f64>,
@@ -28,7 +28,7 @@ impl RunningStd {
     }
 }
 
-/// Update function to calculate the new mean and mean_2 values
+/// Update function to calculate the new `mean` and `mean_2` values
 fn update_stats(
     count: usize,
     mean: &[f64],
@@ -66,6 +66,7 @@ fn compute_mean(ari: &[f64]) -> f64 {
     sum / ari.len() as f64
 }
 
+/// Computes the normalized cumulative sum.
 pub fn normalized_cumsum(v: &[f64]) -> Vec<f64> {
     let total: f64 = v.iter().sum();
     let ret: Vec<f64> = v

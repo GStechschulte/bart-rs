@@ -80,7 +80,9 @@ impl SampleIndices {
 /// Weight tracks the log weight and likelihood of each `Particle`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Weight {
+    /// Log-weight of this particle.
     pub log_w: f64,
+    /// Log-likelihood of this particle.
     pub log_likelihood: f64,
 }
 
@@ -110,12 +112,16 @@ impl Weight {
 /// and the weight of the Particle
 #[derive(Debug, Clone, PartialEq)]
 pub struct Particle {
+    /// Bindary decision tree representing the regression tree.
     pub tree: DecisionTree,
+    /// Indices to track which training sample belongs to which node.
     pub indices: SampleIndices,
+    /// Log weights associated with this particle.
     pub weight: Weight,
 }
 
 impl Particle {
+    /// Creates a new Particle initialized by a mean and number of training samples.
     pub fn new(init_value: f64, num_samples: usize) -> Self {
         let tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
