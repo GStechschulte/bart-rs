@@ -77,8 +77,7 @@ class BART(Distribution):
     m : int
         Number of trees.
     response : str
-        How the leaf_node values are computed. Available options are ``constant``, ``linear`` or
-        ``mix``. Defaults to ``constant``. Options ``linear`` and ``mix`` are still experimental.
+        How the leaf_node values are computed. Available options are ``constant`` or ``linear``. Defaults to ``constant``.
     alpha : float
         Controls the prior probability over the depth of the trees.
         Should be in the (0, 1) interval.
@@ -88,10 +87,8 @@ class BART(Distribution):
     split_prior : Optional[List[float]], default None.
         List of positive numbers, one per column in input data.
         Defaults to None, all covariates have the same prior probability to be selected.
-    split_rules : Optional[List[SplitRule]], default None
-        List of SplitRule objects, one per column in input data.
-        Allows using different split rules for different columns. Default is ContinuousSplitRule.
-        Other options are OneHotSplitRule and SubsetSplitRule, both meant for categorical variables.
+    split_rules : Optional[List[str]], default None
+        List of split rules, one per column in input data. Allows using different split rules for different columns. Default is "ContinuousSplitRule". Other options are "OneHotSplitRule" and "SubsetSplitRule", both meant for categorical variables.
     shape: : Optional[Tuple], default None
         Specify the output shape. If shape is different from (len(X)) (the default), train a
         separate tree for each value in other dimensions.
@@ -126,12 +123,24 @@ class BART(Distribution):
         separate_trees: Optional[bool] = False,
         **kwargs,
     ):
+        supported_responses = {"constant", "linear"}
+        if response not in supported_responses:
+            raise ValueError(f"Invalid response option: '{response}'. Must be one of {supported_responses}.")
 
-        if response in ["linear", "mix"]:
+        if response == "linear":
             warnings.warn(
-                "Options linear and mix are experimental and still not well tested\n"
-                + "Use with caution."
+                "The 'linear' option is experimental and not well tested. Use with caution."
             )
+
+        if isinstance(split_rules, (list, str)):
+            supported_split_rules = ["ContinuousSplit", "OneHotSplit"]
+            rules = split_rules if isinstance(split_rules, list) else [split_rules]
+            invalid_rules = [rule for rule in rules if rule not in supported_split_rules]
+            if invalid_rules:
+                raise ValueError(f"rule(s) must be one of {supported_split_rules}. Received invalid rule(s): {invalid_rules}")
+        else:
+            raise TypeError("'split_rules' must be either a list or a string")
+
         manager = Manager()
         cls.all_trees = manager.list()
 

@@ -20,7 +20,7 @@ use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::Particle;
 use crate::split_rules::SplitRuleType;
 
-/// PgBartSetting are setting parameters used to initialize a new PgBartState
+/// PgBartSetting are parameters used to initialize a new `PgBartState`.
 ///
 /// `split_rules` is a vector of `SplitRuleType` enum variants as the user
 /// may pass different split rule types.
@@ -262,7 +262,7 @@ impl PgBartState {
     }
 
     /// Update the weight (log-likelihood) of a Particle.
-    #[inline]
+    #[inline(always)]
     fn update_weight(&self, X: &Array2<f64>, particle: &mut Particle, local_preds: &Array1<f64>) {
         // To update the weight, the grown Particle first needs to make predictions
         let preds = local_preds + &particle.predict(X);
@@ -301,8 +301,8 @@ impl PgBartState {
     }
 }
 
-/// Systematic resampling to sample new Particles according to a Particle's weight
-#[inline]
+/// Systematic resampling to sample new Particles according to a Particle's weight.
+#[inline(always)]
 pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
     let num_particles = particles.len();
     let mut resampled_particles = Vec::with_capacity(num_particles);
@@ -318,7 +318,7 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
             acc
         });
 
-    // Stage 1: Process particles that need cloning, i.e. count > 1
+    // Stage 1: Process particles that need cloning, i.e. index count > 1
     let mut to_remove = Vec::new();
     for (&idx, &count) in &index_counts {
         if count > 1 {
@@ -351,7 +351,7 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
 /// the evenly spaced points with a random offset.
 ///
 /// Note: adapted from https://github.com/nchopin/particles
-#[inline]
+#[inline(always)]
 fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Item = usize> + '_ {
     // Generate a uniform random number and use it to create evenly spaced points
     let mut rng = rand::thread_rng();
@@ -386,7 +386,7 @@ fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Ite
 }
 
 /// Sample a Particle proportional to its weight.
-#[inline]
+#[inline(always)]
 pub fn select_particle(particles: &mut Vec<Particle>, weights: &[f64]) -> Particle {
     let mut rng = thread_rng();
     let dist = WeightedIndex::new(weights).unwrap();
@@ -400,7 +400,7 @@ pub fn select_particle(particles: &mut Vec<Particle>, weights: &[f64]) -> Partic
 ///
 /// The Softmax function is implemented using the log-sum-exp trick to ensure
 /// the normalization of particle weights is numerically stable.
-#[inline]
+#[inline(always)]
 pub fn normalize_weights(particles: &[Particle]) -> Vec<f64> {
     // Skip the first particle
     let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w).collect();

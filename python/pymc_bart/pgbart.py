@@ -124,7 +124,7 @@ class PGBART(ArrayStepShared):
         # passed to Rust and called using Rust's foreign function interface (FFI)
         self.compiled_pymc_model = CompiledPyMCModel(model, vars)
 
-        # Initialize the Rust sampler
+        # Initialize the Rust Particle-Gibbs sampler
         self.state = initialize(
             X=self.X,
             y=self.bart.Y,
@@ -145,7 +145,7 @@ class PGBART(ArrayStepShared):
         super().__init__(vars, self.compiled_pymc_model.shared)
 
     def astep(self, _):
-        # Record time quantify performance improvements
+        # Record time to quantify performance improvements
         t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
         sum_trees, variable_inclusion = step(self.state, self.tune)

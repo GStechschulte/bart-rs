@@ -86,7 +86,7 @@ impl ResponseStrategy for LinearResponse {
 pub struct TreeSamplingOps {
     /// Normal distribution to sample Gaussian distributed leaf values.
     pub normal: Normal<f64>,
-    /// Initial...
+    /// Initial prior probability over a feature being used as a splitting variable.
     pub alpha_vec: Vec<f64>,
     /// Prior probability over a feature being used as a splitting variable.
     pub splitting_probs: Vec<f64>,
