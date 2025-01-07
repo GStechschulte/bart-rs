@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install --find-links dist --force-reinstall 'pymc-bart[all]'
+          pip install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
           pip install pytest
           pytest
       - name: pytest
@@ -57,7 +57,7 @@ jobs:
             pip3 install -U pip pytest
           run: |
             set -e
-            pip3 install --find-links dist --force-reinstall 'pymc-bart[all]'
+            pip3 install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
             pytest
 
   windows:
@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install "pymc-bart[all]" --find-links dist --force-reinstall
+          pip install "pymc-bart-rs[all]" --find-links dist --force-reinstall
           pip install pytest
           pytest
 
@@ -119,7 +119,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install 'pymc-bart[all]' --find-links dist --force-reinstall
+          pip install 'pymc-bart-rs[all]' --find-links dist --force-reinstall
           pip install pytest
           pytest
 

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
-import pymc_bart as pmb
+import pymc_bart_rs as pmb
 
 
 RANDOM_SEED = 8457
@@ -74,7 +74,7 @@ def test_coal(args):
     y_data = hist
 
     with pm.Model() as model_coal:
-        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), m=args.trees)
+        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), m=args.trees, split_rules=["ContinuousSplit"])
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
