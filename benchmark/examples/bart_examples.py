@@ -73,7 +73,13 @@ def test_coal(args):
     y_data = hist
 
     with pm.Model() as model_coal:
-        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), m=args.trees, split_rules=["ContinuousSplit"])
+        mu = pmb.BART(
+            "mu",
+            X=x_data,
+            Y=np.log(y_data),
+            m=args.trees,
+            # split_rules=["ContinuousSplit"]
+        )
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
