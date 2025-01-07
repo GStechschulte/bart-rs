@@ -112,7 +112,7 @@ impl Weight {
 /// and the weight of the Particle
 #[derive(Debug, Clone, PartialEq)]
 pub struct Particle {
-    /// Bindary decision tree representing the regression tree.
+    /// Binary decision tree representing the regression tree.
     pub tree: DecisionTree,
     /// Indices to track which training sample belongs to which node.
     pub indices: SampleIndices,
