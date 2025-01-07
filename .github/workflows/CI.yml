@@ -88,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          pip install "{your-package-name}[all]" --find-links dist --force-reinstall
+          pip install "pymc-bart-rs[all]" --find-links dist --force-reinstall
           pip install pytest
           pytest
 

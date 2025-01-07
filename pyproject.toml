@@ -12,6 +12,19 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+#dependencies = [
+#  "numba >= 0.60.0",
+#  "pymc >= 5.19.1",
+#  "arviz >= 0.20.0",
+#]
+
+[project.optional-dependencies]
+all = [
+  "numba >= 0.60.0",
+  "pymc >= 5.19.1",
+  "arviz >= 0.20.0",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
