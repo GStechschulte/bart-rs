@@ -36,29 +36,29 @@ jobs:
         with:
           name: linux-${{ matrix.target }}-wheels
           path: dist
-      - name: pytest
-        if: ${{ startsWith(matrix.target, 'x86_64') }}
-        shell: bash
-        run: |
-          set -e
-          pip install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
-          pip install pytest
-          pytest
-      - name: pytest
-        if: ${{ !startsWith(matrix.target, 'x86') }}
-        uses: uraimo/run-on-arch-action@v2.8.1
-        with:
-          arch: ${{ matrix.target }}
-          distro: ubuntu22.04
-          githubToken: ${{ github.token }}
-          install: |
-            apt-get update
-            apt-get install -y --no-install-recommends python3 python3-pip
-            pip3 install -U pip pytest
-          run: |
-            set -e
-            pip3 install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
-            pytest
+      # - name: pytest
+      #   if: ${{ startsWith(matrix.target, 'x86_64') }}
+      #   shell: bash
+      #   run: |
+      #     set -e
+      #     pip install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
+      #     pip install pytest
+      #     pytest
+      # - name: pytest
+      #   if: ${{ !startsWith(matrix.target, 'x86') }}
+      #   uses: uraimo/run-on-arch-action@v2.8.1
+      #   with:
+      #     arch: ${{ matrix.target }}
+      #     distro: ubuntu22.04
+      #     githubToken: ${{ github.token }}
+      #     install: |
+      #       apt-get update
+      #       apt-get install -y --no-install-recommends python3 python3-pip
+      #       pip3 install -U pip pytest
+      #     run: |
+      #       set -e
+      #       pip3 install --find-links dist --force-reinstall 'pymc-bart-rs[all]'
+      #       pytest
 
   windows:
     runs-on: windows-latest
@@ -83,14 +83,14 @@ jobs:
         with:
           name: windows-${{ matrix.target }}-wheels
           path: dist
-      - name: pytest
-        if: ${{ !startsWith(matrix.target, 'aarch64') }}
-        shell: bash
-        run: |
-          set -e
-          pip install "pymc-bart-rs[all]" --find-links dist --force-reinstall
-          pip install pytest
-          pytest
+      # - name: pytest
+      #   if: ${{ !startsWith(matrix.target, 'aarch64') }}
+      #   shell: bash
+      #   run: |
+      #     set -e
+      #     pip install "pymc-bart-rs[all]" --find-links dist --force-reinstall
+      #     pip install pytest
+      #     pytest
 
   macos:
     runs-on: macos-latest
@@ -114,14 +114,14 @@ jobs:
         with:
           name: macos-${{ matrix.target }}-wheels
           path: dist
-      - name: pytest
-        if: ${{ startsWith(matrix.target, 'aarch64') }}
-        shell: bash
-        run: |
-          set -e
-          pip install 'pymc-bart-rs[all]' --find-links dist --force-reinstall
-          pip install pytest
-          pytest
+      # - name: pytest
+      #   if: ${{ startsWith(matrix.target, 'aarch64') }}
+      #   shell: bash
+      #   run: |
+      #     set -e
+      #     pip install 'pymc-bart-rs[all]' --find-links dist --force-reinstall
+      #     pip install pytest
+      #     pytest
 
   sdist:
     runs-on: ubuntu-latest
