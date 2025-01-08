@@ -22,7 +22,7 @@ Get started by using PyMC-BART to set up a BART model
 
 ```python
 import pymc as pm
-import pymc_bart_rs as pmb
+import pymc_bart as pmb
 
 X, y = ... # Your data replaces "..."
 with pm.Model() as model:
