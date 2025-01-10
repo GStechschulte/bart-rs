@@ -95,11 +95,15 @@ class PGBART(ArrayStepShared):
         shape = initial_point[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
 
+        print(f"shape: {shape}, self.shape: {self.shape}")
+
         # Set trees_shape (dim for separate tree structures)
         # and leaves_shape (dim for leaf node values)
         # One of the two is always one, the other equal to self.shape
         self.trees_shape = self.shape if self.bart.separate_trees else 1
         self.leaves_shape = self.shape if not self.bart.separate_trees else 1
+
+        print(f"self.leaves_shape: {self.leaves_shape}")
 
         if self.bart.split_prior.size == 0:
             self.alpha_vec = np.ones(self.X.shape[1])
@@ -112,7 +116,8 @@ class PGBART(ArrayStepShared):
             self.split_rules = ["ContinuousSplit"] * self.X.shape[1]
 
         # If data is binary
-        self.leaf_sd = np.ones((self.trees_shape, self.leaves_shape))
+        # self.leaf_sd = np.ones((self.trees_shape, self.leaves_shape))
+        self.leaf_sd = np.ones(self.leaves_shape)
 
         y_unique = np.unique(self.bart.Y)
         if y_unique.size == 2 and np.all(y_unique == [0, 1]):
@@ -120,11 +125,13 @@ class PGBART(ArrayStepShared):
         else:
             self.leaf_sd *= self.bart.Y.std() / self.m ** 0.5
 
+        print(f"self.leaf_std: {self.leaf_sd}")
+
         # Compile the PyMC model to create a C callback. This function pointer is
         # passed to Rust and called using Rust's foreign function interface (FFI)
         self.compiled_pymc_model = CompiledPyMCModel(model, vars)
 
-        # Initialize the Rust Particle-Gibbs sampler
+        # Initialize the Rust Particle-Gibbs sampler state
         self.state = initialize(
             X=self.X,
             y=self.bart.Y,
@@ -138,7 +145,7 @@ class PGBART(ArrayStepShared):
             n_particles=num_particles,
             leaf_sd=self.leaf_sd,
             batch=batch,
-            _leaves_shape=self.leaves_shape,
+            leaves_shape=self.leaves_shape,
         )
 
         self.tune = True

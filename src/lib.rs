@@ -63,9 +63,9 @@ fn initialize(
     response: String,
     n_trees: usize,
     n_particles: usize,
-    leaf_sd: f64,
+    leaf_sd: Vec<f64>,
     batch: (f64, f64),
-    _leaves_shape: usize,
+    leaves_shape: usize,
 ) -> PyResult<StateWrapper> {
     // Heap allocation because size of 'ExternalData' is not known at compile time
     let data = Box::new(ExternalData::new(X, y, logp));
@@ -96,6 +96,7 @@ fn initialize(
         split_prior.to_vec().unwrap(),
         response,
         rules,
+        leaves_shape,
     );
     let state = PgBartState::new(params, data);
 

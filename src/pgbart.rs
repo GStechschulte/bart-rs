@@ -34,7 +34,7 @@ pub struct PgBartSettings {
     /// beta parameter to control node depth.
     pub beta: f64,
     /// Leaf node standard deviation.
-    pub leaf_sd: f64,
+    pub leaf_sd: Vec<f64>,
     /// Batch size to use during tuning and draws.
     pub batch: (f64, f64),
     /// Initial prior probability over feature splitting probability.
@@ -43,6 +43,8 @@ pub struct PgBartSettings {
     pub response: Response,
     /// Split rule strategy to use for sampling threshold (split) values.
     pub split_rules: Vec<SplitRuleType>,
+    /// Number of dimensions for multi-output leaf values
+    pub n_dim: usize,
 }
 
 impl PgBartSettings {
@@ -54,11 +56,12 @@ impl PgBartSettings {
         n_particles: usize,
         alpha: f64,
         beta: f64,
-        leaf_sd: f64,
+        leaf_sd: Vec<f64>,
         batch: (f64, f64),
         init_alpha_vec: Vec<f64>,
         response: Response,
         split_rules: Vec<SplitRuleType>,
+        n_dim: usize,
     ) -> Self {
         Self {
             n_trees,
@@ -70,6 +73,7 @@ impl PgBartSettings {
             init_alpha_vec,
             response,
             split_rules,
+            n_dim,
         }
     }
 }
@@ -126,7 +130,6 @@ impl PgBartState {
             alpha: params.alpha,
             beta: params.beta,
             normal: Normal::new(0.0, 1.0).unwrap(),
-            // uniform: Uniform::new(0.0, 1.0),
         };
 
         Self {
@@ -220,7 +223,7 @@ impl PgBartState {
                     self.update_splitting_probability(&new_particle);
                 }
 
-                if self.iter > 2 {
+                if self.iter > 2 && self.params.leaf_sd.len() <= 1 {
                     self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
                 } else {
                     // Update tuning statistics without assigning a new leaf standard deviation
@@ -310,6 +313,33 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     // Move the first particle without cloning
     resampled_particles.push(particles[0].clone());
 
+    // Pre-allocate index counts array instead of using HashMap
+    // Add 1 since we're using 1-based indexing for the rest of the particles
+    let mut index_counts = vec![0usize; num_particles];
+
+    // Generate systematic resampling indices and count occurrences
+    // Using a dedicated counter array instead of HashMap
+    let mut rng = thread_rng();
+    let u = rng.gen::<f64>() / (num_particles - 1) as f64;
+
+    let mut cumsum = 0.0;
+    let mut j = 1; // Start from 1 since we already handled particle 0
+
+    // Single pass to compute resampling indices
+    for i in 0..(num_particles - 1) {
+        let target = u + i as f64 / (num_particles - 1) as f64;
+
+        while j < weights.len() && cumsum + weights[j] < target {
+            cumsum += weights[j];
+            j += 1;
+        }
+
+        // Increment count for this index
+        index_counts[j] += 1;
+    }
+
+    println!("index_counts: {:?}", index_counts);
+
     // Resample Particle indices and count number of occurences each index appears
     let mut index_counts = systematic_resample(weights, num_particles - 1)
         .map(|idx| idx + 1)
@@ -317,6 +347,8 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
             *acc.entry(idx).or_insert(0) += 1;
             acc
         });
+
+    println!("index_counts: {:?}", index_counts);
 
     // Stage 1: Process particles that need cloning, i.e. index count > 1
     let mut to_remove = Vec::new();

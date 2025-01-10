@@ -25,6 +25,9 @@ from pandas import DataFrame, Series
 from pymc.distributions.distribution import Distribution, _support_point
 from pymc.logprob.abstract import _logprob
 from pytensor.tensor.random.op import RandomVariable
+from pytensor.tensor.sharedvar import TensorSharedVariable
+
+from .utils import _sample_posterior
 
 __all__ = ["BART"]
 
@@ -32,32 +35,39 @@ class BARTRV(RandomVariable):
     """Base class for BART."""
 
     name: str = "BART"
-    signature = "(m,n),(m),(),(),(),(k)->(m)"
-    # ndim_supp = 1
-    ndims_params: List[int] = [2, 1, 0, 0, 0, 1]
+    signature = "(m,n),(m),(),(),() -> (m)"
     dtype: str = "floatX"
     _print_name: Tuple[str, str] = ("BART", "\\operatorname{BART}")
     all_trees = None
 
     def _supp_shape_from_params(self, dist_params, rep_param_idx=1, param_shapes=None):  # pylint: disable=arguments-renamed
-        return dist_params[0].shape[:1]
+        idx = dist_params[0].ndim - 2
+        return [dist_params[0].shape[idx]]
 
     @classmethod
     def rng_fn(  # pylint: disable=W0237
-        cls, rng=None, X=None, Y=None, m=None, alpha=None, beta=None, split_prior=None, size=None
+        cls, rng=None, X=None, Y=None, m=None, alpha=None, beta=None, size=None
     ):
+        if not size:
+            size = None
+
+        if isinstance(cls.Y, TensorSharedVariable):
+            Y = cls.Y.eval()
+        else:
+            Y = cls.Y
+
         if not cls.all_trees:
             if size is not None:
-                return np.full((size[0], cls.Y.shape[0]), cls.Y.mean())
+                return np.full((size[0], Y.shape[0]), Y.mean())
             else:
-                return np.full(cls.Y.shape[0], cls.Y.mean())
-        # TODO: !!!
-        # else:
-        #     if size is not None:
-        #         shape = size[0]
-        #     else:
-        #         shape = 1
-        #     return _sample_posterior(cls.all_trees, cls.X, rng=rng, shape=shape).squeeze().T
+                return np.full(Y.shape[0], Y.mean())
+        else:
+            if size is not None:
+                shape = size[0]
+            else:
+                shape = 1
+            raise NotImplementedError("_sample_posterior not implemented")
+            # return _sample_posterior(cls.all_trees, cls.X, rng=rng, shape=shape).squeeze().T
 
 
 bart = BARTRV()
@@ -175,7 +185,7 @@ class BART(Distribution):
             return cls.get_moment(rv, size, *rv_inputs)
 
         cls.rv_op = bart_op
-        params = [X, Y, m, alpha, beta, split_prior]
+        params = [X, Y, m, alpha, beta]
         return super().__new__(cls, name, *params, **kwargs)
 
     @classmethod
@@ -207,6 +217,16 @@ def preprocess_xy(X, Y) -> Tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]
         Y = Y.to_numpy()
     if isinstance(X, (Series, DataFrame)):
         X = X.to_numpy()
+
+    try:
+        import polars as pl
+
+        if isinstance(X, (pl.Series, pl.DataFrame)):
+            X = X.to_numpy()
+        if isinstance(Y, (pl.Series, pl.DataFrame)):
+            Y = Y.to_numpy()
+    except ImportError:
+        pass
 
     Y = Y.astype(float)
     X = X.astype(float)

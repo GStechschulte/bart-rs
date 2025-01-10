@@ -121,12 +121,17 @@ impl TreeSamplingOps {
         mu: &[f64],
         _obs: &[f64],
         m: usize,
-        leaf_sd: &f64,
-        _shape: usize,
+        leaf_sd: &Vec<f64>,
+        _shape: &usize,
         response: &Response,
     ) -> f64 {
         let mut rng = thread_rng();
-        let norm = self.normal.sample(&mut rng) * leaf_sd;
+
+        if leaf_sd.len() > 1 {
+            todo!("Multiple `leaf_sd` not supported.")
+        }
+
+        let norm = self.normal.sample(&mut rng) * leaf_sd[0];
 
         match mu.len() {
             0 => 0.0,
