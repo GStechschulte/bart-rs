@@ -43,6 +43,8 @@ pub struct PgBartSettings {
     pub response: Response,
     /// Split rule strategy to use for sampling threshold (split) values.
     pub split_rules: Vec<SplitRuleType>,
+    /// Number of dimensions for multi-output leaf values
+    pub n_dims: usize,
 }
 
 impl PgBartSettings {
@@ -59,6 +61,7 @@ impl PgBartSettings {
         init_alpha_vec: Vec<f64>,
         response: Response,
         split_rules: Vec<SplitRuleType>,
+        n_dims: usize,
     ) -> Self {
         Self {
             n_trees,
@@ -70,6 +73,7 @@ impl PgBartSettings {
             init_alpha_vec,
             response,
             split_rules,
+            n_dims,
         }
     }
 }
@@ -84,7 +88,7 @@ pub struct PgBartState {
     /// sampling operations.
     pub tree_ops: TreeSamplingOps,
     /// Sum of trees (predictions).
-    pub predictions: Array1<f64>,
+    pub predictions: Array2<f64>,
     /// Particle is a wrapper around a `DecisionTree`.
     pub particles: Vec<Particle>,
     /// Feature counter for performing feature importance.
@@ -107,13 +111,17 @@ impl PgBartState {
         let y = data.y();
 
         let mu = y.mean().unwrap();
-        let leaf_value = mu / params.n_trees as f64;
+        let init_leaf_value = vec![mu / params.n_trees as f64; params.n_dims];
 
-        let predictions = Array1::from_elem(y.len(), mu);
+        // Initialize predictions with shape [n_groups, n_rows]
+        let predictions = Array2::from_elem(
+            (params.n_dims, y.len()), // n_groups rows, n_samples columns
+            mu / params.n_trees as f64,
+        );
 
         // Initialize Particles vector
         let particles = (0..params.n_trees)
-            .map(|_| Particle::new(leaf_value, X.nrows()))
+            .map(|_| Particle::new(&init_leaf_value, X.nrows()))
             .collect();
 
         // Tree sampling operations
@@ -126,7 +134,6 @@ impl PgBartState {
             alpha: params.alpha,
             beta: params.beta,
             normal: Normal::new(0.0, 1.0).unwrap(),
-            // uniform: Uniform::new(0.0, 1.0),
         };
 
         Self {
@@ -154,20 +161,15 @@ impl PgBartState {
     /// The grown particles are then resampled according to their log-likelihood, of which
     /// one is selected to replace the current tree `M_i`.
     pub fn step(&mut self) {
-        // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
 
-        // Logic for determining how many trees to update in a batch given tuning and the
-        // batch size
         let batch_size = if self.tune {
             (self.params.n_trees as f64 * self.params.batch.0).ceil() as usize
         } else {
             (self.params.n_trees as f64 * self.params.batch.1).ceil() as usize
         };
 
-        // Determine tree_ids based on tuning status
         let upper = (self.lower + batch_size).min(self.params.n_trees);
-        // Determine range of tree_ids based on tuning status
         let tree_ids = self.lower..upper;
         self.lower = if upper < self.params.n_trees {
             upper
@@ -178,16 +180,18 @@ impl PgBartState {
         let mu = self.data.y().mean().unwrap();
         let X = self.data.X();
 
-        tree_ids.for_each(|tree_id| {
+        for tree_id in tree_ids {
             self.iter += 1;
 
-            // Get the selected particle (tree) and compute predictions without it
-            let selected_particle = &self.particles[tree_id];
-            let old_predictions = selected_particle.predict(&X);
-            let predictions_minus_old = &self.predictions - &old_predictions;
+            // Get selected particle and remove it from particles vec
+            let mut selected_particle = self.particles.remove(tree_id);
+            let old_predictions = selected_particle.predict(X);
+
+            // Subtract old predictions
+            let predictions_minus_old = self.predictions - old_predictions;
 
             // Initialize local particles
-            let mut local_particles = self.initialize_particles(&X, &old_predictions, mu);
+            let mut local_particles = self.initialize_particles(X, &predictions_minus_old, mu);
 
             // Grow particles until all are finished
             while local_particles
@@ -196,8 +200,8 @@ impl PgBartState {
                 .any(|particle| !particle.finished())
             {
                 local_particles.iter_mut().skip(1).for_each(|particle| {
-                    if particle.grow(&X, self) {
-                        self.update_weight(&X, particle, &predictions_minus_old);
+                    if particle.grow(X, self) {
+                        self.update_weight(X, particle, &predictions_minus_old);
                     }
                 });
 
@@ -206,54 +210,53 @@ impl PgBartState {
                 local_particles = resample_particles(&mut local_particles, &normalized_weights);
             }
 
-            // Normalize weights again and select a particle to replace the current tree
+            // Normalize weights again and select a particle
             let normalized_weights = normalize_weights(&local_particles);
-            let new_particle = select_particle(&mut local_particles, &normalized_weights);
+            let mut new_particle = select_particle(&mut local_particles, &normalized_weights);
 
-            // Update the sum of trees with the new particle's predictions
-            let new_particle_preds = &new_particle.predict(&X);
-            self.predictions = predictions_minus_old + new_particle_preds;
+            // Update sum of trees with new particle's predictions
+            let new_predictions = new_particle.predict(X);
+            self.predictions = &predictions_minus_old + new_predictions;
 
-            // During tuning, update feature split probability and leaf standard deviation
-            if self.tune {
-                if self.iter > self.params.n_trees {
-                    self.update_splitting_probability(&new_particle);
-                }
+            // Update tuning statistics if necessary
+            // if self.tune {
+            //     if self.iter > self.params.n_trees {
+            //         self.update_splitting_probability(&new_particle);
+            //     }
 
-                if self.iter > 2 {
-                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
-                } else {
-                    // Update tuning statistics without assigning a new leaf standard deviation
-                    self.tuning_stats.update(&new_particle_preds.to_vec());
-                }
-            } else {
-                self.update_variable_inclusion(&new_particle);
-            }
+            //     if self.iter > 2 {
+            //         self.params.leaf_sd = self
+            //             .tuning_stats
+            //             .update(new_predictions.as_slice().unwrap());
+            //     } else {
+            //         self.tuning_stats
+            //             .update(new_predictions.as_slice().unwrap());
+            //     }
+            // } else {
+            //     self.update_variable_inclusion(&new_particle);
+            // }
 
-            // Replace the current tree with the new particle
-            self.particles[tree_id] = new_particle;
-        });
+            // Put the new particle back in the vector
+            self.particles.insert(tree_id, new_particle);
+        }
     }
 
     /// Generate an initial set of particles for _this_ tree.
     fn initialize_particles(
         &self,
         X: &Array2<f64>,
-        sum_trees_noi: &Array1<f64>,
+        sum_trees_noi: &Array2<f64>,
         mu: f64,
     ) -> Vec<Particle> {
-        let leaf_value = mu / (self.params.n_trees as f64);
+        // let init_value = Array1::from_elem(self.params.n_dims, mu / self.params.n_trees as f64);
+        let init_leaf_value = vec![mu / self.params.n_trees as f64; self.params.n_dims];
 
-        // Create a new vector of Particles with the same ParticleParams passed to
-        // PgBartState::new
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
-                let mut particle = Particle::new(leaf_value, X.nrows());
-
+                let mut particle = Particle::new(&init_leaf_value, X.nrows());
                 if i == 0 {
                     self.update_weight(X, &mut particle, sum_trees_noi);
                 }
-
                 particle
             })
             .collect();
@@ -263,10 +266,10 @@ impl PgBartState {
 
     /// Update the weight (log-likelihood) of a Particle.
     #[inline(always)]
-    fn update_weight(&self, X: &Array2<f64>, particle: &mut Particle, local_preds: &Array1<f64>) {
+    fn update_weight(&self, X: &Array2<f64>, particle: &mut Particle, local_preds: &Array2<f64>) {
         // To update the weight, the grown Particle first needs to make predictions
-        let preds = local_preds + &particle.predict(X);
-        let log_likelihood = self.data.evaluate_logp(preds);
+        let preds = local_preds + particle.predict(X);
+        let log_likelihood = self.data.evaluate_logp(&preds);
 
         particle.weight.set(log_likelihood);
     }
@@ -296,7 +299,7 @@ impl PgBartState {
     }
 
     /// Returns a borrowed reference to predictions (sum of trees).
-    pub fn predictions(&self) -> &Array1<f64> {
+    pub fn predictions(&self) -> &Array2<f64> {
         &self.predictions
     }
 }

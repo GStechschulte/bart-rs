@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use ndarray::{Array1, Array2, ArrayView2, Axis};
 use rand::{self, thread_rng, Rng};
 use rand_distr::{Distribution, Normal};
 
@@ -42,15 +43,27 @@ impl FromStr for Response {
 }
 
 trait ResponseStrategy {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64;
+    fn compute_leaf_value(
+        &self,
+        mu: ArrayView2<f64>,
+        m: usize,
+        norm: &Array1<f64>,
+        n_dims: usize,
+    ) -> Array1<f64>;
 }
 
 impl ResponseStrategy for Response {
     /// Calls the corresponding `compute_leaf_value` for each `Response` variant
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
+    fn compute_leaf_value(
+        &self,
+        mu: ArrayView2<f64>,
+        m: usize,
+        norm: &Array1<f64>,
+        n_dims: usize,
+    ) -> Array1<f64> {
         match self {
-            Response::Constant(constant) => constant.compute_leaf_value(mu, m, norm),
-            Response::Linear(linear) => linear.compute_leaf_value(mu, m, norm),
+            Response::Constant(constant) => constant.compute_leaf_value(mu, m, norm, n_dims),
+            Response::Linear(linear) => linear.compute_leaf_value(mu, m, norm, n_dims),
         }
     }
 }
@@ -63,8 +76,16 @@ impl ResponseStrategy for Response {
 #[derive(Debug)]
 pub struct ConstantResponse;
 impl ResponseStrategy for ConstantResponse {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
-        (mu.iter().sum::<f64>() / mu.len() as f64) / m as f64 + norm
+    fn compute_leaf_value(
+        &self,
+        mu: ArrayView2<f64>,
+        m: usize,
+        norm: &Array1<f64>,
+        n_dims: usize,
+    ) -> Array1<f64> {
+        // Compute mean across samples for each dimension
+        let means = mu.mean_axis(Axis(0)).unwrap();
+        means.mapv(|x| x / m as f64) + norm
     }
 }
 
@@ -72,11 +93,21 @@ impl ResponseStrategy for ConstantResponse {
 #[derive(Debug)]
 pub struct LinearResponse;
 impl ResponseStrategy for LinearResponse {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
-        match mu.len() {
-            2 => mu.iter().sum::<f64>() / (2.0 * m as f64) + norm,
-            _len @ 3.. => todo!("Implement fast_linear_fit."),
-            _ => unreachable!("Linear response requires at least 2 values."),
+    fn compute_leaf_value(
+        &self,
+        mu: ArrayView2<f64>,
+        m: usize,
+        norm: &Array1<f64>,
+        n_dims: usize,
+    ) -> Array1<f64> {
+        match mu.nrows() {
+            2 => {
+                // Sum values for each dimension then normalize
+                let sum = mu.sum_axis(Axis(1));
+                sum.mapv(|x| x / (2.0 * m as f64)) + norm
+            }
+            _len @ 3.. => todo!("Implement fast_linear_fit for multi-dimensional case."),
+            _ => unreachable!("Linear response requires at least 2 values per dimension."),
         }
     }
 }
@@ -118,20 +149,24 @@ impl TreeSamplingOps {
     /// Sample a Gaussian distributed value for a leaf node.
     pub fn sample_leaf_value(
         &self,
-        mu: &[f64],
-        _obs: &[f64],
+        mu: &Array2<f64>, // Shape: [n_groups, n_samples]
+        _obs: &[f64],     // Will be used for linear sqaures
         m: usize,
         leaf_sd: &f64,
-        _shape: usize,
+        n_dims: usize,
         response: &Response,
-    ) -> f64 {
+    ) -> Array1<f64> {
         let mut rng = thread_rng();
-        let norm = self.normal.sample(&mut rng) * leaf_sd;
+        let norms = Array1::from_iter((0..n_dims).map(|_| self.normal.sample(&mut rng) * leaf_sd));
 
-        match mu.len() {
-            0 => 0.0,
-            1 => mu[0] / m as f64 + norm,
-            _ => response.compute_leaf_value(mu, m, norm),
+        match mu.nrows() {
+            0 => Array1::zeros(n_dims),
+            1 => {
+                let mut result = mu.column(0).to_owned();
+                result.mapv_inplace(|x| x / m as f64);
+                result + &norms
+            }
+            _ => response.compute_leaf_value(mu.view(), m, &norms, n_dims),
         }
     }
 

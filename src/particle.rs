@@ -18,7 +18,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use ndarray::{Array1, Array2};
+use ndarray::{s, Array1, Array2};
 
 use crate::{
     pgbart::PgBartState,
@@ -118,19 +118,23 @@ pub struct Particle {
     pub indices: SampleIndices,
     /// Log weights associated with this particle.
     pub weight: Weight,
+    /// Reusable buffer for predictions.
+    pub predictions_buffer: Array2<f64>,
 }
 
 impl Particle {
     /// Creates a new Particle initialized by a mean and number of training samples.
-    pub fn new(init_value: f64, num_samples: usize) -> Self {
+    pub fn new(init_value: &[f64], num_samples: usize) -> Self {
         let tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
+        let predictions_buffer = Array2::zeros((init_value.len(), num_samples));
 
         Self {
             tree,
             indices,
             weight,
+            predictions_buffer,
         }
     }
 
@@ -193,34 +197,50 @@ impl Particle {
         }
 
         let left_value = {
-            let predictions = left_samples.iter().map(|&i| state.predictions[i]);
-            let observations = left_samples.iter().map(|&i| X[[i, feature]]);
+            // Create Array2 with shape [n_groups, n_samples]
+            let mut predictions = Array2::zeros((state.params.n_dims, left_samples.len()));
+            for (col, &sample_idx) in left_samples.iter().enumerate() {
+                predictions
+                    .column_mut(col)
+                    .assign(&state.predictions.column(sample_idx));
+            }
+
+            let observations: Vec<f64> = left_samples.iter().map(|&i| X[[i, feature]]).collect();
+
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
-                &observations.collect::<Vec<_>>(),
+                &predictions,
+                &observations,
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                1, // shape
+                state.params.n_dims,
                 &state.params.response,
             )
         };
 
         let right_value = {
-            let predictions = right_samples.iter().map(|&i| state.predictions[i]);
-            let observations = right_samples.iter().map(|&i| X[[i, feature]]);
+            // Create Array2 with shape [n_groups, n_samples]
+            let mut predictions = Array2::zeros((state.params.n_dims, right_samples.len()));
+            for (col, &sample_idx) in right_samples.iter().enumerate() {
+                predictions
+                    .column_mut(col)
+                    .assign(&state.predictions.column(sample_idx));
+            }
+
+            let observations: Vec<f64> = right_samples.iter().map(|&i| X[[i, feature]]).collect();
+
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
-                &observations.collect::<Vec<_>>(),
+                &predictions,
+                &observations,
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                1, // shape
+                state.params.n_dims,
                 &state.params.response,
             )
         };
 
         match self
             .tree
-            .split_node(node_index, feature, split_value, left_value, right_value)
+            .split_node(node_index, feature, split_value, &left_value, &right_value)
         {
             Ok((left_index, right_index)) => {
                 self.indices.remove_index(node_index);
@@ -236,20 +256,44 @@ impl Particle {
     ///
     /// Takes a 2D array of features and returns a 1D array of predictions. For each leaf
     /// node in the tree, assigns that node's value to all samples that fall into that node.
-    pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
-        let mut predictions = Array1::zeros(X.nrows());
+    pub fn predict(&mut self, X: &Array2<f64>) -> &Array2<f64> {
+        // Reset predictions buffer
+        self.predictions_buffer.fill(0.0);
+        let mut temp_buf = vec![0.0; self.tree.n_dims()];
 
         for (node_index, samples) in self.indices.data_indices.iter().enumerate() {
             if self.tree.is_leaf(node_index) {
-                let leaf_value = self.tree.value[node_index];
+                // Predict into temporary buffer
+                self.tree
+                    .predict(X.row(samples[0]).as_slice().unwrap(), &mut temp_buf);
+
+                // Copy predictions to all samples in this leaf
                 for &sample_index in samples {
-                    predictions[sample_index] = leaf_value
+                    self.predictions_buffer
+                        .row_mut(sample_index)
+                        .as_slice_mut()
+                        .unwrap()
+                        .copy_from_slice(&temp_buf);
                 }
             }
         }
 
-        predictions
+        &self.predictions_buffer
     }
+    // pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
+    //     let mut predictions = Array1::zeros(X.nrows());
+
+    //     for (node_index, samples) in self.indices.data_indices.iter().enumerate() {
+    //         if self.tree.is_leaf(node_index) {
+    //             let leaf_value = self.tree.value[node_index];
+    //             for &sample_index in samples {
+    //                 predictions[sample_index] = leaf_value
+    //             }
+    //         }
+    //     }
+
+    //     predictions
+    // }
 
     /// Checks whether there are any expansion nodes left for growing. If false,
     /// then the Particle is "finished" growing.
