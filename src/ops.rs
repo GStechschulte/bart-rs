@@ -17,6 +17,7 @@
 
 use std::str::FromStr;
 
+use ndarray::{Array1, Array2, ArrayView1};
 use rand::{self, thread_rng, Rng};
 use rand_distr::{Distribution, Normal};
 
@@ -42,15 +43,15 @@ impl FromStr for Response {
 }
 
 trait ResponseStrategy {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64;
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: &[f64], n_dims: usize) -> Array1<f64>;
 }
 
 impl ResponseStrategy for Response {
     /// Calls the corresponding `compute_leaf_value` for each `Response` variant
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: &[f64], n_dims: usize) -> Array1<f64> {
         match self {
-            Response::Constant(constant) => constant.compute_leaf_value(mu, m, norm),
-            Response::Linear(linear) => linear.compute_leaf_value(mu, m, norm),
+            Response::Constant(constant) => constant.compute_leaf_value(mu, m, norm, n_dims),
+            Response::Linear(linear) => linear.compute_leaf_value(mu, m, norm, n_dims),
         }
     }
 }
@@ -63,8 +64,24 @@ impl ResponseStrategy for Response {
 #[derive(Debug)]
 pub struct ConstantResponse;
 impl ResponseStrategy for ConstantResponse {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
-        (mu.iter().sum::<f64>() / mu.len() as f64) / m as f64 + norm
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: &[f64], n_dims: usize) -> Array1<f64> {
+        // (mu.iter().sum::<f64>() / mu.len() as f64) / m as f64 + norm
+        // Initialize output array
+        let mut result = Array1::zeros(n_dims);
+        let n_samples = mu.len() / n_dims;
+
+        // For each dimension
+        for dim in 0..n_dims {
+            // Get values for this dimension
+            let mut sum = 0.0;
+            for i in 0..n_samples {
+                sum += mu[i * n_dims + dim];
+            }
+            // Compute mean and add noise
+            result[dim] = (sum / n_samples as f64) / m as f64 + norm[dim];
+        }
+
+        result
     }
 }
 
@@ -72,12 +89,34 @@ impl ResponseStrategy for ConstantResponse {
 #[derive(Debug)]
 pub struct LinearResponse;
 impl ResponseStrategy for LinearResponse {
-    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: f64) -> f64 {
-        match mu.len() {
-            2 => mu.iter().sum::<f64>() / (2.0 * m as f64) + norm,
-            _len @ 3.. => todo!("Implement fast_linear_fit."),
-            _ => unreachable!("Linear response requires at least 2 values."),
+    fn compute_leaf_value(&self, mu: &[f64], m: usize, norm: &[f64], n_dims: usize) -> Array1<f64> {
+        let n_samples = mu.len() / n_dims;
+        let mut result = Array1::zeros(n_dims);
+
+        // For each dimension
+        for dim in 0..n_dims {
+            // Extract values for this dimension
+            let dim_values: Vec<f64> = (0..n_samples).map(|i| mu[i * n_dims + dim]).collect();
+
+            match dim_values.len() {
+                0 => result[dim] = 0.0,
+                1 => result[dim] = dim_values[0] / m as f64 + norm[dim],
+                2 => {
+                    // Simple average for two values
+                    result[dim] = dim_values.iter().sum::<f64>() / (2.0 * m as f64) + norm[dim];
+                }
+                _len @ 3.. => {
+                    // TODO: Implement fast_linear_fit for multiple values
+                    // For now, use mean as a placeholder
+                    result[dim] = dim_values.iter().sum::<f64>()
+                        / (dim_values.len() as f64 * m as f64)
+                        + norm[dim];
+                }
+                _ => unreachable!("Linear response requires at least 2 values."),
+            }
         }
+
+        result
     }
 }
 
@@ -118,25 +157,24 @@ impl TreeSamplingOps {
     /// Sample a Gaussian distributed value for a leaf node.
     pub fn sample_leaf_value(
         &self,
-        mu: &[f64],
-        _obs: &[f64],
+        mu: ArrayView1<f64>,
+        obs: &[f64],
         m: usize,
-        leaf_sd: &Vec<f64>,
-        _shape: &usize,
+        leaf_sd: &[f64],
         response: &Response,
-    ) -> f64 {
+        n_groups: usize,
+    ) -> Array1<f64> {
         let mut rng = thread_rng();
 
-        if leaf_sd.len() > 1 {
-            todo!("Multiple `leaf_sd` not supported.")
-        }
-
-        let norm = self.normal.sample(&mut rng) * leaf_sd[0];
+        // Sample noise for each group
+        let norm: Vec<f64> = leaf_sd
+            .iter()
+            .map(|&sd| self.normal.sample(&mut rng) * sd)
+            .collect();
 
         match mu.len() {
-            0 => 0.0,
-            1 => mu[0] / m as f64 + norm,
-            _ => response.compute_leaf_value(mu, m, norm),
+            0 => Array1::zeros(n_groups),
+            _ => response.compute_leaf_value(mu.as_slice().unwrap(), m, &norm, n_groups),
         }
     }
 

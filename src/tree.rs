@@ -5,6 +5,8 @@
 use core::fmt;
 use std::cmp::Ordering;
 
+use ndarray::{s, Array1, ArrayView1};
+
 /// A `DecisionTree` is an array-based implementation of the binary decision tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecisionTree {
@@ -13,7 +15,8 @@ pub struct DecisionTree {
     /// Stores the threshold value for the i'th node split.
     pub threshold: Vec<f64>,
     /// Stores output values for the i'th node
-    pub value: Vec<f64>,
+    pub value: Array1<f64>,
+    pub n_dims: usize,
 }
 
 /// Represents errors related to binary decision tree operations.
@@ -48,21 +51,40 @@ impl DecisionTree {
     /// arbitrary. For example, `feature` and `threshold` vectors only apply to
     /// split nodes. The values for leaf nodes in these vectors are therefore
     /// arbitrary.
-    pub fn new(init_value: f64) -> Self {
+    pub fn new(init_value: &Array1<f64>) -> Self {
         Self {
             feature: vec![0],
             threshold: vec![0.0],
-            value: vec![init_value],
+            value: init_value.clone(),
+            n_dims: init_value.len(),
         }
+    }
+
+    #[inline(always)]
+    pub fn node_values(&self, node_idx: usize) -> ArrayView1<f64> {
+        let start = node_idx * self.n_dims;
+        let end = start + self.n_dims;
+        self.value.slice(ndarray::s![start..end])
     }
 
     /// Adds a new node to the `DecisionTree` and returns the location of _this_ node in the
     /// `feature` vector.
-    pub fn add_node(&mut self, feature: usize, threshold: f64, value: f64) -> usize {
+    /// Adds a new node to the `DecisionTree` and returns the location of _this_ node in the
+    /// `feature` vector.
+    pub fn add_node(&mut self, feature: usize, threshold: f64, value: &Array1<f64>) -> usize {
         let node_id = self.feature.len();
+
         self.feature.push(feature);
         self.threshold.push(threshold);
-        self.value.push(value);
+
+        // Extend values buffer
+        let mut new_buffer = Array1::zeros(self.value.len() + self.n_dims);
+        new_buffer
+            .slice_mut(s![..self.value.len()])
+            .assign(&self.value);
+        new_buffer.slice_mut(s![self.value.len()..]).assign(value);
+        self.value = new_buffer;
+
         node_id
     }
 
@@ -114,10 +136,10 @@ impl DecisionTree {
         node_index: usize,
         feature: usize,
         threshold: f64,
-        left_value: f64,
-        right_value: f64,
+        left_value: &Array1<f64>,
+        right_value: &Array1<f64>,
     ) -> Result<(usize, usize), TreeError> {
-        if node_index >= self.value.len() {
+        if node_index >= self.feature.len() {
             return Err(TreeError::InvalidNodeIndex);
         }
 
@@ -136,19 +158,37 @@ impl DecisionTree {
         Ok((left_child_index, right_child_index))
     }
 
-    /// Predict the output given an input `sample`.
-    pub fn predict(&self, sample: &[f64]) -> f64 {
+    /// Predicts values for a given input sample.
+    /// Uses SIMD-friendly slice operations for performance.
+    pub fn predict<'a>(&'a self, sample: &[f64], output: &'a mut [f64]) {
+        debug_assert!(output.len() == self.n_dims);
+
         let mut node = 0;
         loop {
             if self.is_leaf(node) {
-                return self.value[node];
+                let node_vals = self.node_values(node);
+                output.copy_from_slice(node_vals.as_slice().unwrap());
+                return;
             }
+
             let feature = self.feature[node];
             let threshold = self.threshold[node];
+
             node = match sample[feature].partial_cmp(&threshold).unwrap() {
                 Ordering::Less => self.left_child(node).unwrap(),
                 _ => self.right_child(node).unwrap(),
             };
         }
+    }
+
+    /// Returns the number of dimensions for leaf values
+    #[inline(always)]
+    pub fn n_dims(&self) -> usize {
+        self.n_dims
+    }
+
+    /// Implementation for serialization if needed
+    pub fn values_as_slice(&self) -> &[f64] {
+        self.value.as_slice().unwrap()
     }
 }

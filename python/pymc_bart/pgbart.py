@@ -95,8 +95,6 @@ class PGBART(ArrayStepShared):
         shape = initial_point[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
 
-        print(f"shape: {shape}, self.shape: {self.shape}")
-
         # Set trees_shape (dim for separate tree structures)
         # and leaves_shape (dim for leaf node values)
         # One of the two is always one, the other equal to self.shape

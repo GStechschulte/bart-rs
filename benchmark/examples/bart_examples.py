@@ -123,10 +123,39 @@ def test_asymmetric_laplace(args):
     }
 
     with pm.Model(coords=coords) as model:
-        mu = pmb.BART("mu", X, y, m=5, dims=["quantiles", "n_obs"])
+        mu = pmb.BART("mu", X, y, m=args.trees, dims=["quantiles", "n_obs"])
         sigma = pm.HalfNormal("sigma", 5)
         obs = pm.AsymmetricLaplace("obs", mu=mu, b=sigma, q=quantiles, observed=y_stack)
-        step = pmb.PGBART([mu], num_particles=3, batch=(0.1, 0.1))
+
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=1,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
+        # step = pmb.PGBART([mu], num_particles=3, batch=(0.1, 0.1))
+
+    # step.astep(1)
+    # idata_g_mean_quantiles = idata.posterior_predictive["obs"].quantile(
+    #     quantiles[:, 0], ("chain", "draw")
+    # )
+    #
+    print(idata.posterior)
+
+    plt.plot(bmi.age, bmi.bmi, ".", color="0.5")
+    for idx, q in enumerate(quantiles[:, 0]):
+        plt.plot(
+            bmi.age,
+            idata.posterior["mu"].mean(("chain", "draw")).sel(quantiles=q),
+            label=f"q={q:}",
+            lw=3,
+        )
+
+    plt.legend();
+    plt.show()
 
 
 def main(args):

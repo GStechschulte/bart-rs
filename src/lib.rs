@@ -38,7 +38,7 @@ use crate::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 
 use std::str::FromStr;
 
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
 /// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
@@ -108,7 +108,7 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>) {
+) -> (Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<i32>>) {
     // Update whether or not `pm.sampler` is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
@@ -116,7 +116,7 @@ fn step<'py>(
 
     // Get predictions (sum of trees) and convert to PyArray
     let predictions = wrapper.state.predictions();
-    let py_preds_array = PyArray1::from_array_bound(py, &predictions.view());
+    let py_preds_array = PyArray2::from_array_bound(py, &predictions.view());
 
     // Get variable inclusion counter and convert to PyArray
     let variable_inclusion = wrapper.state.variable_inclusion().clone();

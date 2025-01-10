@@ -18,7 +18,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use ndarray::{Array1, Array2};
+use ndarray::{s, Array1, Array2};
 
 use crate::{
     pgbart::PgBartState,
@@ -122,7 +122,7 @@ pub struct Particle {
 
 impl Particle {
     /// Creates a new Particle initialized by a mean and number of training samples.
-    pub fn new(init_value: f64, num_samples: usize) -> Self {
+    pub fn new(init_value: &Array1<f64>, num_samples: usize) -> Self {
         let tree = DecisionTree::new(init_value);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
@@ -134,7 +134,7 @@ impl Particle {
         }
     }
 
-    /// Grows *this* Particle tree.
+    // Grows *this* Particle tree.
     pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
@@ -151,12 +151,10 @@ impl Particle {
 
         let samples = &self.indices.data_indices[node_index];
         let feature = state.tree_ops.sample_split_feature();
-        // Select the split rule assigned for this feature
         let rule = &state.params.split_rules[feature];
 
         let (left_samples, right_samples, split_value) = match rule {
             SplitRuleType::Continuous(continuous_rule) => {
-                // TODO: unnecessary nested iterable?
                 let feature_values: Vec<f64> = samples
                     .iter()
                     .map(|&i| X[[i, feature]])
@@ -164,7 +162,6 @@ impl Particle {
                     .collect();
 
                 if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
-                    // TODO: divide is riddled with vector allocations
                     let (left, right) = continuous_rule.divide(&feature_values, &split_val);
                     (left, right, split_val)
                 } else {
@@ -174,13 +171,13 @@ impl Particle {
             SplitRuleType::OneHot(one_hot_rule) => {
                 let feature_values: Vec<i32> = samples
                     .iter()
-                    .map(|&i| X[[i, feature]] as i32) // Explicit type cast to i32
+                    .map(|&i| X[[i, feature]] as i32)
                     .filter(|&x| x >= 0)
                     .collect();
 
                 if let Some(split_val) = one_hot_rule.sample_split_value(&feature_values) {
                     let (left, right) = one_hot_rule.divide(&feature_values, &split_val);
-                    (left, right, split_val as f64) // Convert i32 to f64 for consistency
+                    (left, right, split_val as f64)
                 } else {
                     return false;
                 }
@@ -193,34 +190,34 @@ impl Particle {
         }
 
         let left_value = {
-            let predictions = left_samples.iter().map(|&i| state.predictions[i]);
+            let predictions = state.get_group_predictions(&left_samples);
             let observations = left_samples.iter().map(|&i| X[[i, feature]]);
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
+                predictions.view(),
                 &observations.collect::<Vec<_>>(),
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                &state.params.n_dim,
                 &state.params.response,
+                state.params.n_dim,
             )
         };
 
         let right_value = {
-            let predictions = right_samples.iter().map(|&i| state.predictions[i]);
+            let predictions = state.get_group_predictions(&right_samples);
             let observations = right_samples.iter().map(|&i| X[[i, feature]]);
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
+                predictions.view(),
                 &observations.collect::<Vec<_>>(),
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                &state.params.n_dim,
                 &state.params.response,
+                state.params.n_dim,
             )
         };
 
         match self
             .tree
-            .split_node(node_index, feature, split_value, left_value, right_value)
+            .split_node(node_index, feature, split_value, &left_value, &right_value)
         {
             Ok((left_index, right_index)) => {
                 self.indices.remove_index(node_index);
@@ -233,17 +230,22 @@ impl Particle {
     }
 
     /// Generates predictions for a set of input samples using the particle's decision tree.
-    ///
-    /// Takes a 2D array of features and returns a 1D array of predictions. For each leaf
-    /// node in the tree, assigns that node's value to all samples that fall into that node.
-    pub fn predict(&self, X: &Array2<f64>) -> Array1<f64> {
-        let mut predictions = Array1::zeros(X.nrows());
+    pub fn predict(&self, X: &Array2<f64>) -> Array2<f64> {
+        let n_samples = X.nrows();
+        let n_dims = self.tree.n_dims();
+        // Initialize predictions with shape (n_dims x n_samples)
+        let mut predictions = Array2::zeros((n_dims, n_samples));
+        let mut row_buffer = vec![0.0; n_dims];
 
         for (node_index, samples) in self.indices.data_indices.iter().enumerate() {
             if self.tree.is_leaf(node_index) {
-                let leaf_value = self.tree.value[node_index];
                 for &sample_index in samples {
-                    predictions[sample_index] = leaf_value
+                    self.tree
+                        .predict(X.row(sample_index).as_slice().unwrap(), &mut row_buffer);
+                    // Assign values to the appropriate column in predictions
+                    predictions
+                        .column_mut(sample_index)
+                        .assign(&Array1::from(row_buffer.clone()));
                 }
             }
         }
@@ -251,8 +253,8 @@ impl Particle {
         predictions
     }
 
-    /// Checks whether there are any expansion nodes left for growing. If false,
-    /// then the Particle is "finished" growing.
+    // Checks whether there are any expansion nodes left for growing. If false,
+    // then the Particle is "finished" growing.
     pub fn finished(&self) -> bool {
         self.indices.is_empty()
     }
