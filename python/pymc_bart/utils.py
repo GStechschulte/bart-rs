@@ -14,13 +14,11 @@ from scipy.interpolate import griddata
 from scipy.signal import savgol_filter
 from scipy.stats import norm
 
-# from .tree import Tree
 
 TensorLike = Union[npt.NDArray[np.float64], pt.TensorVariable]
 
 
 def _sample_posterior(
-    # all_trees: List[List[Tree]],
     all_trees,
     X: TensorLike,
     rng: np.random.Generator,
@@ -50,7 +48,7 @@ def _sample_posterior(
         X = X.eval()
 
     if size is None:
-        size_iter: Union[List, Tuple] = (1,)
+        size_iter: Union[list, tuple] = (1,)
     elif isinstance(size, int):
         size_iter = [size]
     else:
@@ -59,9 +57,6 @@ def _sample_posterior(
     flatten_size = 1
     for s in size_iter:
         flatten_size *= s
-
-    print(f"len(stacked_trees): {len(stacked_trees)}")
-    print(f"flatten_size: {flatten_size}")
 
     idx = rng.integers(0, len(stacked_trees), size=flatten_size)
 

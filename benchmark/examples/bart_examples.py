@@ -77,8 +77,7 @@ def test_coal(args):
             "mu",
             X=x_data,
             Y=np.log(y_data),
-            m=args.trees,
-            # split_rules=["ContinuousSplit"]
+            m=args.trees
         )
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
@@ -92,7 +91,7 @@ def test_coal(args):
             ],
             random_seed=RANDOM_SEED,
         )
-    #     step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
     # for i in range(1500):
     #     sum_trees, stats = step.astep(i)
@@ -110,6 +109,25 @@ def test_coal(args):
     ax.set_ylabel("rate")
     plt.show()
 
+def test_asymmetric_laplace(args):
+    bmi = pd.read_csv(pm.get_data("bmi.csv"))
+
+    y = bmi.bmi.values
+    X = bmi.age.values[:, None]
+    y_stack = np.stack([bmi.bmi.values] * 3)
+    quantiles = np.array([[0.1, 0.5, 0.9]]).T
+
+    coords = {
+        "quantiles": quantiles.flatten(),
+        "n_obs": np.arange(X.shape[0])
+    }
+
+    with pm.Model(coords=coords) as model:
+        mu = pmb.BART("mu", X, y, m=5, dims=["quantiles", "n_obs"])
+        sigma = pm.HalfNormal("sigma", 5)
+        obs = pm.AsymmetricLaplace("obs", mu=mu, b=sigma, q=quantiles, observed=y_stack)
+        step = pmb.PGBART([mu], num_particles=3, batch=(0.1, 0.1))
+
 
 def main(args):
 
@@ -119,6 +137,8 @@ def main(args):
         test_bikes(args)
     elif args.model == "propensity":
         test_propensity(args)
+    elif args.model == "asymmetric":
+        test_asymmetric_laplace(args)
     else:
         raise TypeError("Invalid model argument passed.")
 

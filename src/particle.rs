@@ -200,7 +200,7 @@ impl Particle {
                 &observations.collect::<Vec<_>>(),
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                1, // shape
+                &state.params.n_dim,
                 &state.params.response,
             )
         };
@@ -213,7 +213,7 @@ impl Particle {
                 &observations.collect::<Vec<_>>(),
                 state.params.n_trees,
                 &state.params.leaf_sd,
-                1, // shape
+                &state.params.n_dim,
                 &state.params.response,
             )
         };
