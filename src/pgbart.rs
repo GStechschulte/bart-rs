@@ -313,33 +313,6 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     // Move the first particle without cloning
     resampled_particles.push(particles[0].clone());
 
-    // Pre-allocate index counts array instead of using HashMap
-    // Add 1 since we're using 1-based indexing for the rest of the particles
-    let mut index_counts = vec![0usize; num_particles];
-
-    // Generate systematic resampling indices and count occurrences
-    // Using a dedicated counter array instead of HashMap
-    let mut rng = thread_rng();
-    let u = rng.gen::<f64>() / (num_particles - 1) as f64;
-
-    let mut cumsum = 0.0;
-    let mut j = 1; // Start from 1 since we already handled particle 0
-
-    // Single pass to compute resampling indices
-    for i in 0..(num_particles - 1) {
-        let target = u + i as f64 / (num_particles - 1) as f64;
-
-        while j < weights.len() && cumsum + weights[j] < target {
-            cumsum += weights[j];
-            j += 1;
-        }
-
-        // Increment count for this index
-        index_counts[j] += 1;
-    }
-
-    println!("index_counts: {:?}", index_counts);
-
     // Resample Particle indices and count number of occurences each index appears
     let mut index_counts = systematic_resample(weights, num_particles - 1)
         .map(|idx| idx + 1)
@@ -347,8 +320,6 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
             *acc.entry(idx).or_insert(0) += 1;
             acc
         });
-
-    println!("index_counts: {:?}", index_counts);
 
     // Stage 1: Process particles that need cloning, i.e. index count > 1
     let mut to_remove = Vec::new();

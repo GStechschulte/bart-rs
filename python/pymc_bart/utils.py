@@ -101,7 +101,9 @@ def plot_convergence(
     List[ax] : matplotlib axes
     """
     ess_threshold = idata["posterior"]["chain"].size * 100
-    ess = np.atleast_2d(az.ess(idata, method="bulk", var_names=var_name)[var_name].values)
+    ess = np.atleast_2d(
+        az.ess(idata, method="bulk", var_names=var_name)[var_name].values
+    )
     rhat = np.atleast_2d(az.rhat(idata, var_names=var_name)[var_name].values)
 
     if figsize is None:
@@ -262,7 +264,9 @@ def plot_ice(
             fake_X[:, indices_mi] = X[:, indices_mi][instance]
             y_pred.append(
                 np.mean(
-                    _sample_posterior(all_trees, X=fake_X, rng=rng, size=samples, shape=shape),
+                    _sample_posterior(
+                        all_trees, X=fake_X, rng=rng, size=samples, shape=shape
+                    ),
                     0,
                 )
             )
@@ -407,7 +411,9 @@ def plot_pdp(
             all_trees, X=fake_X, rng=rng, size=samples, excluded=excluded, shape=shape
         )
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="hdi currently interprets 2d data")
+            warnings.filterwarnings(
+                "ignore", message="hdi currently interprets 2d data"
+            )
             new_x = fake_X[:, var]
             for s_i in range(shape):
                 p_di = func(p_d[:, :, s_i])
@@ -508,7 +514,9 @@ def _get_axes(grid, n_plots, sharex, sharey, figsize):
         if n_plots == 1:
             axes = [axes]
     elif grid == "wide":
-        fig, axes = plt.subplots(1, n_plots, sharex=sharex, sharey=sharey, figsize=figsize)
+        fig, axes = plt.subplots(
+            1, n_plots, sharex=sharex, sharey=sharey, figsize=figsize
+        )
         if n_plots == 1:
             axes = [axes]
     elif isinstance(grid, tuple):
@@ -697,7 +705,9 @@ def _smooth_mean(
     return x_data, y_data
 
 
-def plot_variable_inclusion(idata, X, labels=None, figsize=None, plot_kwargs=None, ax=None):
+def plot_variable_inclusion(
+    idata, X, labels=None, figsize=None, plot_kwargs=None, ax=None
+):
     """
     Plot normalized variable inclusion from BART model.
 
@@ -743,7 +753,9 @@ def plot_variable_inclusion(idata, X, labels=None, figsize=None, plot_kwargs=Non
     if labels is None:
         labels = np.arange(n_vars).astype(str)
 
-    new_labels = ["+ " + ele if index != 0 else ele for index, ele in enumerate(labels[indices])]
+    new_labels = [
+        "+ " + ele if index != 0 else ele for index, ele in enumerate(labels[indices])
+    ]
 
     ticks = np.arange(n_vars, dtype=int)
 
@@ -870,7 +882,10 @@ def compute_variable_importance(  # noqa: PLR0915 PLR0912
                 shape=shape,
             )
             r_2 = np.array(
-                [pearsonr2(predicted_all[j], predicted_subset[j]) for j in range(samples)]
+                [
+                    pearsonr2(predicted_all[j], predicted_subset[j])
+                    for j in range(samples)
+                ]
             )
             r2_mean[idx] = np.mean(r_2)
             r2_hdi[idx] = az.hdi(r_2)
@@ -1018,7 +1033,9 @@ def plot_variable_importance(
 
     labels = ["+ " + ele if index != 0 else ele for index, ele in enumerate(labels)]
 
-    r_2_ref = np.array([pearsonr2(preds_all[j], preds_all[j + 1]) for j in range(samples - 1)])
+    r_2_ref = np.array(
+        [pearsonr2(preds_all[j], preds_all[j + 1]) for j in range(samples - 1)]
+    )
 
     r2_yerr_min = np.clip(r2_mean - r2_hdi[:, 0], 0, None)
     r2_yerr_max = np.clip(r2_hdi[:, 1] - r2_mean, 0, None)

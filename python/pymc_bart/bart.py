@@ -31,6 +31,7 @@ from .utils import _sample_posterior
 
 __all__ = ["BART"]
 
+
 class BARTRV(RandomVariable):
     """Base class for BART."""
 
@@ -71,6 +72,7 @@ class BARTRV(RandomVariable):
 
 
 bart = BARTRV()
+
 
 class BART(Distribution):
     r"""
@@ -128,14 +130,16 @@ class BART(Distribution):
         alpha: float = 0.95,
         beta: float = 2.0,
         response: str = "constant",
-        split_rules: List[str] = ["ContinuousSplit"],
+        split_rules: Optional[List[str]] = None,
         split_prior: Optional[npt.NDArray[np.float_]] = None,
         separate_trees: Optional[bool] = False,
         **kwargs,
     ):
         supported_responses = {"constant", "linear"}
         if response not in supported_responses:
-            raise ValueError(f"Invalid response option: '{response}'. Must be one of {supported_responses}.")
+            raise ValueError(
+                f"Invalid response option: '{response}'. Must be one of {supported_responses}."
+            )
 
         if response == "linear":
             warnings.warn(
@@ -145,11 +149,13 @@ class BART(Distribution):
         if isinstance(split_rules, (list, str)):
             supported_split_rules = ["ContinuousSplit", "OneHotSplit"]
             rules = split_rules if isinstance(split_rules, list) else [split_rules]
-            invalid_rules = [rule for rule in rules if rule not in supported_split_rules]
+            invalid_rules = [
+                rule for rule in rules if rule not in supported_split_rules
+            ]
             if invalid_rules:
-                raise ValueError(f"rule(s) must be one of {supported_split_rules}. Received invalid rule(s): {invalid_rules}")
-        else:
-            raise TypeError("'split_rules' must be either a list or a string")
+                raise ValueError(
+                    f"rule(s) must be one of {supported_split_rules}. Received invalid rule(s): {invalid_rules}"
+                )
 
         manager = Manager()
         cls.all_trees = manager.list()
@@ -232,6 +238,7 @@ def preprocess_xy(X, Y) -> Tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]
     X = X.astype(float)
 
     return X, Y
+
 
 @_logprob.register(BARTRV)
 def logp(op, value_var, *dist_params, **kwargs):

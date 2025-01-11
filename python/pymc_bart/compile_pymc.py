@@ -11,7 +11,7 @@ from pymc.pytensorf import (
     compile_pymc,
     inputvars,
     join_nonshared_inputs,
-    make_shared_replacements
+    make_shared_replacements,
 )
 from numba import carray, cfunc, extending, float64, types, njit
 from numba.core import cgutils
@@ -52,16 +52,11 @@ class CompiledPyMCModel:
         out_vars = [model.datalogp]
 
         new_out, new_joined_inputs = join_nonshared_inputs(
-            initial_values,
-            out_vars,
-            vars,
-            shared
+            initial_values, out_vars, vars, shared
         )
 
         logp_fn = compile_pymc(
-            inputs=[new_joined_inputs],
-            outputs=new_out[0],
-            mode="NUMBA"
+            inputs=[new_joined_inputs], outputs=new_out[0], mode="NUMBA"
         )
         logp_fn.trust_input = True
 
@@ -71,7 +66,6 @@ class CompiledPyMCModel:
         arrays = [item.storage[0].copy() for item in self.logp_fn_ptr.input_storage[1:]]
         assert all(arr.dtype == np.float64 for arr in arrays)
         return arrays
-
 
     def update_shared_arrays(self):
         """Update the persistent shared arrays with new values from the function storage"""
@@ -87,12 +81,14 @@ class CompiledPyMCModel:
 
         code = [
             "def _logp(ptr, size):",
-            "    data = carray(ptr, (size, ), dtype=float64)"
+            "    data = carray(ptr, (size, ), dtype=float64)",
         ]
 
         for i, array in enumerate(shared_arrays):
-            line = "    arg{} = carray(address_as_void_pointer({}), {}, dtype={})".format(
-                i, array.ctypes.data, array.shape, array.dtype
+            line = (
+                "    arg{} = carray(address_as_void_pointer({}), {}, dtype={})".format(
+                    i, array.ctypes.data, array.shape, array.dtype
+                )
             )
             code.append(line)
 
