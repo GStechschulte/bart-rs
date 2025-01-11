@@ -53,7 +53,7 @@ class PGBART(ArrayStepShared):
     stats_dtypes_shapes: dict[str, tuple[type, list]] = {
         "variable_inclusion": (object, []),
         "tune": (bool, []),
-        "time": (float, [])
+        "time": (float, []),
     }
 
     def __init__(  # noqa: PLR0915
@@ -65,7 +65,6 @@ class PGBART(ArrayStepShared):
         initial_point: PointType | None = None,
         compile_kwargs: dict | None = None,  # pylint: disable=unused-argument
     ):
-
         model = modelcontext(model)
         if initial_point is None:
             initial_point = model.initial_point()
@@ -103,8 +102,6 @@ class PGBART(ArrayStepShared):
         self.trees_shape = self.shape if self.bart.separate_trees else 1
         self.leaves_shape = self.shape if not self.bart.separate_trees else 1
 
-        print(f"self.leaves_shape: {self.leaves_shape}")
-
         if self.bart.split_prior.size == 0:
             self.alpha_vec = np.ones(self.X.shape[1])
         else:
@@ -123,9 +120,7 @@ class PGBART(ArrayStepShared):
         if y_unique.size == 2 and np.all(y_unique == [0, 1]):
             self.leaf_sd *= 3 / self.m**0.5
         else:
-            self.leaf_sd *= self.bart.Y.std() / self.m ** 0.5
-
-        print(f"self.leaf_std: {self.leaf_sd}")
+            self.leaf_sd *= self.bart.Y.std() / self.m**0.5
 
         # Compile the PyMC model to create a C callback. This function pointer is
         # passed to Rust and called using Rust's foreign function interface (FFI)
@@ -161,7 +156,7 @@ class PGBART(ArrayStepShared):
         stats = {
             "variable_inclusion": variable_inclusion,
             "tune": self.tune,
-            "time": t1 - t0
+            "time": t1 - t0,
         }
         return sum_trees, [stats]
 
