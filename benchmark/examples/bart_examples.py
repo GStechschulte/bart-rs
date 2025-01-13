@@ -49,6 +49,7 @@ def test_bikes(args):
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=1., observed=Y)
 
         idata = pm.sample(
+            chains=1,
             tune=args.tune,
             draws=args.draws,
             step=[
