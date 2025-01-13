@@ -59,9 +59,11 @@ def test_bikes(args):
 
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
     
-    for i in range(1500):
-         sum_trees, stats = step.astep(i)
-         print(f"iter: {i}, time: {stats[0].get('time')}")
+    sum_trees, stats = step.astep(1)
+
+    #for i in range(1500):
+    #     sum_trees, stats = step.astep(i)
+    #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
 def test_coal(args):
     coal = np.loadtxt(pm.get_data("coal.csv"))
@@ -101,7 +103,6 @@ def test_coal(args):
     for i in range(1500):
          sum_trees, stats = step.astep(i)
          print(f"iter: {i}, time: {stats[0].get('time')}")
-
     #_, ax = plt.subplots(figsize=(10, 6))
     #rates = idata.posterior["exp_mu"] / 4
     #rate_mean = rates.mean(dim=["draw", "chain"])
