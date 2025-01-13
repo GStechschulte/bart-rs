@@ -48,18 +48,18 @@ def test_bikes(args):
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=1., observed=Y)
 
-        #idata = pm.sample(
-        #    tune=args.tune,
-        #    draws=args.draws,
-        #    step=[
-        #        pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #    ],
-        #    random_seed=RANDOM_SEED,
-        #)
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
 
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        #step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
     
-    sum_trees, stats = step.astep(1)
+    #sum_trees, stats = step.astep(1)
 
     #for i in range(1500):
     #     sum_trees, stats = step.astep(i)
