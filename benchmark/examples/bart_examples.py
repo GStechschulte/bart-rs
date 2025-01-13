@@ -44,9 +44,9 @@ def test_bikes(args):
     Y = bikes["count"]
 
     with pm.Model() as model_bikes:
-        alpha = pm.Exponential("alpha", 1.0)
+        #alpha = pm.Exponential("alpha", 1.0)
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
-        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=1., observed=Y)
 
         #idata = pm.sample(
         #    tune=args.tune,
