@@ -67,13 +67,20 @@ class CompiledPyMCModel:
         assert all(arr.dtype == np.float64 for arr in arrays)
         return arrays
 
+    @njit
+    def _fast_update(self, dest, src):
+        for i in range(len(dest)):
+            dest[i] = src[i]
+
     def update_shared_arrays(self):
-        """Update the persistent shared arrays with new values from the function storage"""
+        """Update the persistent shared arrays with new values from the function storage.
+
+        'logp_fn_ptr.input_storage' contains PyTensor shared variables used for computing
+        the logp.
+        """
         for array, storage in zip(self.logp_args, self.logp_fn_ptr.input_storage[1:]):
-            new_arr = storage.storage[0]
-            assert array.shape == new_arr.shape
-            array *= 0.0
-            array += new_arr
+            np.copyto(array, storage.storage[0])
+            # self._fast_update(array, storage.storage[0])
 
     def _generate_logp_function(self):
         logp_fn = self.logp_fn_ptr.vm.jit_fn

@@ -31,11 +31,25 @@ def test_propensity(args):
         idata = pm.sample(
             tune=args.tune,
             draws=args.draws,
+            chains=4,
             step=[
                 pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
             ],
             random_seed=RANDOM_SEED,
         )
+
+    az.plot_forest(
+        idata,
+        var_names=["p"],
+        coords={"p_dim_0": range(20)},
+        figsize=(10, 13),
+        combined=True,
+        kind="ridgeplot",
+        # model_names="BART",
+        r_hat=True,
+        ridgeplot_alpha=0.4,
+    )
+    plt.show()
 
 
 def test_bikes(args):
@@ -44,27 +58,40 @@ def test_bikes(args):
     Y = bikes["count"]
 
     with pm.Model() as model_bikes:
-        #alpha = pm.Exponential("alpha", 1.0)
+        alpha = pm.Exponential("alpha", 1.0)
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
-        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=1., observed=Y)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
 
-        idata = pm.sample(
-            chains=1,
-            tune=args.tune,
-            draws=args.draws,
-            step=[
-                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-            ],
-            random_seed=RANDOM_SEED,
-        )
+        # idata = pm.sample(
+        #     chains=4,
+        #     tune=args.tune,
+        #     draws=args.draws,
+        #     step=[
+        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        #     ],
+        #     random_seed=RANDOM_SEED,
+        # )
 
-        #step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-    
-    #sum_trees, stats = step.astep(1)
+        # posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
+        #         trace=idata, random_seed=RANDOM_SEED
+        #     )
 
-    #for i in range(1500):
-    #     sum_trees, stats = step.astep(i)
-    #     print(f"iter: {i}, time: {stats[0].get('time')}")
+        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+
+    # print(idata["posterior"]["alpha"])
+    # pmb.plot_convergence(idata, var_name="mu")
+    # plt.show()
+
+    # az.plot_ppc(
+    #     data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
+    # )
+    # plt.show()
+
+    # sum_trees, stats = step.astep(1)
+
+    for i in range(1500):
+        sum_trees, stats = step.astep(i)
+        print(f"iter: {i}, time: {stats[0].get('time')}")
 
 def test_coal(args):
     coal = np.loadtxt(pm.get_data("coal.csv"))
@@ -90,31 +117,32 @@ def test_coal(args):
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
-#        idata = pm.sample(
-#            tune=args.tune,
-#            draws=args.draws,
-#            chains=4,
-#            step=[
-#                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-#            ],
-#            random_seed=RANDOM_SEED,
-#        )
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=4,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    for i in range(1500):
-         sum_trees, stats = step.astep(i)
-         print(f"iter: {i}, time: {stats[0].get('time')}")
-    #_, ax = plt.subplots(figsize=(10, 6))
-    #rates = idata.posterior["exp_mu"] / 4
-    #rate_mean = rates.mean(dim=["draw", "chain"])
-    #ax.plot(x_centers, rate_mean, "w", lw=3)
-    #ax.plot(x_centers, y_data / 4, "k.")
-    #az.plot_hdi(x_centers, rates, smooth=False)
-    #az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
-    #ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
-    #ax.set_xlabel("years")
-    #ax.set_ylabel("rate")
-    #plt.show()
+    # for i in range(1500):
+    #      sum_trees, stats = step.astep(i)
+    #      print(f"iter: {i}, time: {stats[0].get('time')}")
+
+    _, ax = plt.subplots(figsize=(10, 6))
+    rates = idata.posterior["exp_mu"] / 4
+    rate_mean = rates.mean(dim=["draw", "chain"])
+    ax.plot(x_centers, rate_mean, "w", lw=3)
+    ax.plot(x_centers, y_data / 4, "k.")
+    az.plot_hdi(x_centers, rates, smooth=False)
+    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
+    ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
+    ax.set_xlabel("years")
+    ax.set_ylabel("rate")
+    plt.show()
 
 def test_asymmetric_laplace(args):
     bmi = pd.read_csv(pm.get_data("bmi.csv"))
