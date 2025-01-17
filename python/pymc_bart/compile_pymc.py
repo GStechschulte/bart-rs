@@ -67,10 +67,11 @@ class CompiledPyMCModel:
         assert all(arr.dtype == np.float64 for arr in arrays)
         return arrays
 
-    @njit
-    def _fast_update(self, dest, src):
-        for i in range(len(dest)):
-            dest[i] = src[i]
+    # TODO: fast update for shared arrays
+    # @njit
+    # def _fast_update(self, dest, src):
+    #     for i in range(len(dest)):
+    #         dest[i] = src[i]
 
     def update_shared_arrays(self):
         """Update the persistent shared arrays with new values from the function storage.

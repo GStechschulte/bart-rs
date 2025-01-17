@@ -158,10 +158,20 @@ def test_asymmetric_laplace(args):
     }
 
     with pm.Model(coords=coords) as model:
-        mu = pmb.BART("mu", X, y, m=5, dims=["quantiles", "n_obs"])
+        # mu = pmb.BART("mu", X, y, m=50, dims=["quantiles", "n_obs"])
+        mu = pmb.BART("mu", X, y, m=50)
         sigma = pm.HalfNormal("sigma", 5)
-        obs = pm.AsymmetricLaplace("obs", mu=mu, b=sigma, q=quantiles, observed=y_stack)
-        step = pmb.PGBART([mu], num_particles=3, batch=(0.1, 0.1))
+        obs = pm.Normal("obs", mu=mu, sigma=sigma, observed=y_stack)
+
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=4,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
 
 
 def main(args):
