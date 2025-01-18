@@ -17,7 +17,7 @@ pub trait SplitRule {
     fn divide(
         &self,
         candidates: &[Self::Value],
-        split_value: &Self::Value,
+        split_value: Self::Value,
     ) -> (Vec<usize>, Vec<usize>);
 }
 
@@ -37,9 +37,19 @@ impl SplitRule for ContinuousSplit {
         }
     }
 
-    fn divide(&self, candidates: &[f64], split_value: &f64) -> (Vec<usize>, Vec<usize>) {
-        let (left, right): (Vec<usize>, Vec<usize>) =
-            (0..candidates.len()).partition(|&idx| candidates[idx] <= *split_value);
+    fn divide(&self, candidates: &[f64], split_value: f64) -> (Vec<usize>, Vec<usize>) {
+        // Partition vectors will likely have at least half of candidate values in each
+        let mut left: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+        let mut right: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+
+        for idx in 0..candidates.len() {
+            if candidates[idx] <= split_value {
+                left.push(idx)
+            } else {
+                right.push(idx);
+            }
+        }
+
         (left, right)
     }
 }
@@ -59,9 +69,19 @@ impl SplitRule for OneHotSplit {
         }
     }
 
-    fn divide(&self, candidates: &[i32], split_value: &i32) -> (Vec<usize>, Vec<usize>) {
-        let (left, right): (Vec<usize>, Vec<usize>) =
-            (0..candidates.len()).partition(|&idx| candidates[idx] == *split_value);
+    fn divide(&self, candidates: &[i32], split_value: i32) -> (Vec<usize>, Vec<usize>) {
+        // Partition vectors will likely have at least half of candidate values in each
+        let mut left: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+        let mut right: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+
+        for idx in 0..candidates.len() {
+            if candidates[idx] == split_value {
+                left.push(idx)
+            } else {
+                right.push(idx);
+            }
+        }
+
         (left, right)
     }
 }
