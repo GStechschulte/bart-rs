@@ -48,11 +48,19 @@ impl DecisionTree {
     /// arbitrary. For example, `feature` and `threshold` vectors only apply to
     /// split nodes. The values for leaf nodes in these vectors are therefore
     /// arbitrary.
-    pub fn new(init_value: f64) -> Self {
+    pub fn new(init_value: f64, max_size: usize) -> Self {
+        let mut feature: Vec<usize> = Vec::with_capacity(max_size);
+        let mut threshold: Vec<f64> = Vec::with_capacity(max_size);
+        let mut value: Vec<f64> = Vec::with_capacity(max_size);
+
+        feature.push(0);
+        threshold.push(0.0);
+        value.push(init_value);
+
         Self {
-            feature: vec![0],
-            threshold: vec![0.0],
-            value: vec![init_value],
+            feature: feature,
+            threshold: threshold,
+            value: value,
         }
     }
 
