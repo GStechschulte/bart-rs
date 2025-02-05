@@ -144,19 +144,19 @@ impl DecisionTree {
         Ok((left_child_index, right_child_index))
     }
 
-    /// Predict the output given an input `sample`.
-    pub fn predict(&self, sample: &[f64]) -> f64 {
-        let mut node = 0;
-        loop {
-            if self.is_leaf(node) {
-                return self.value[node];
-            }
-            let feature = self.feature[node];
-            let threshold = self.threshold[node];
-            node = match sample[feature].partial_cmp(&threshold).unwrap() {
-                Ordering::Less => self.left_child(node).unwrap(),
-                _ => self.right_child(node).unwrap(),
-            };
-        }
-    }
+    // /// Predict the output given an input `sample`.
+    // pub fn predict(&self, sample: &[f64]) -> f64 {
+    //     let mut node = 0;
+    //     loop {
+    //         if self.is_leaf(node) {
+    //             return self.value[node];
+    //         }
+    //         let feature = self.feature[node];
+    //         let threshold = self.threshold[node];
+    //         node = match sample[feature].partial_cmp(&threshold).unwrap() {
+    //             Ordering::Less => self.left_child(node).unwrap(),
+    //             _ => self.right_child(node).unwrap(),
+    //         };
+    //     }
+    // }
 }

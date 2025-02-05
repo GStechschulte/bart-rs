@@ -14,7 +14,7 @@
 #![warn(missing_docs)]
 #![allow(non_snake_case)]
 
-//! pg_bart provides an extensible implementation of Bayesian Additive
+//! `PyMC-BART-rs` provides an extensible implementation of Bayesian Additive
 //! Regression Trees (BART). BART is a non-parametric method to
 //! approximate functions based on the sum of many trees where
 //! priors are used to regularize inference, mainly by restricting
@@ -23,7 +23,9 @@
 //! performed using a sampler inspired by the Particle Gibbs method
 //! introduced by Lakshminarayanan et al. [2015].
 
+pub mod base;
 pub mod data;
+pub mod forest;
 pub mod math;
 pub mod ops;
 pub mod particle;
@@ -33,7 +35,8 @@ pub mod tree;
 
 use crate::data::ExternalData;
 use crate::ops::Response;
-use crate::pgbart::{PgBartSettings, PgBartState};
+// use crate::pgbart::{PgBartSettings, PgBartState};
+use crate::base::{PgBartSettings, PgBartState};
 use crate::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
 
 use std::str::FromStr;
@@ -102,6 +105,14 @@ fn initialize(
 
     Ok(StateWrapper { state })
 }
+
+// #[pyfunction]
+// fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) {
+//     // Update whether or not `pm.sampler` is in tuning phase or not
+//     // wrapper.state.tune = tune;
+//     // Run the Particle Gibbs sampler
+//     wrapper.state.step();
+// }
 
 #[pyfunction]
 fn step<'py>(

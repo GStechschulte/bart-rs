@@ -62,34 +62,37 @@ def test_bikes(args):
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
 
-        # idata = pm.sample(
-        #     chains=4,
-        #     tune=args.tune,
-        #     draws=args.draws,
-        #     step=[
-        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #     ],
-        #     random_seed=RANDOM_SEED,
-        # )
+        idata = pm.sample(
+            chains=4,
+            tune=args.tune,
+            draws=args.draws,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
 
-        # posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
-        #         trace=idata, random_seed=RANDOM_SEED
-        #     )
+        posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
+                trace=idata, random_seed=RANDOM_SEED
+            )
 
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    # print(idata["posterior"]["alpha"])
-    # pmb.plot_convergence(idata, var_name="mu")
-    # plt.show()
+    print(idata["posterior"]["alpha"])
+    pmb.plot_convergence(idata, var_name="mu")
+    plt.show()
 
-    # az.plot_ppc(
-    #     data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
-    # )
-    # plt.show()
+    az.plot_ppc(
+        data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
+    )
+    plt.show()
 
-    for i in range(250):
-        sum_trees, stats = step.astep(i)
-        print(f"iter: {i}, time: {stats[0].get('time')}")
+    # step.astep(1)
+    # sum_trees, stats = step.astep(1)
+
+    # for i in range(250):
+    #     sum_trees, stats = step.astep(i)
+    #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
 
 def test_coal(args):
@@ -126,6 +129,8 @@ def test_coal(args):
         #     random_seed=RANDOM_SEED,
         # )
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+
+    # sum_trees, stats = step.astep(1)
 
     for i in range(500):
          sum_trees, stats = step.astep(i)
@@ -191,7 +196,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="coal", help="Model name")
     parser.add_argument("--trees", type=int, default=50, help="Number of trees")
-    parser.add_argument("--particles", type=int, default=20, help="Number of particles")
+    parser.add_argument("--particles", type=int, default=10, help="Number of particles")
     parser.add_argument("--tune", type=int, default=1000, help="Number of tuning steps")
     parser.add_argument("--draws", type=int, default=1000, help="Number of draws")
     parser.add_argument("--batch", nargs="+", default=(1.0, 1.0), type=float)

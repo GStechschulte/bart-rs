@@ -122,8 +122,8 @@ pub struct Particle {
 
 impl Particle {
     /// Creates a new Particle initialized by a mean and number of training samples.
-    pub fn new(init_value: f64, num_samples: usize) -> Self {
-        let tree = DecisionTree::new(init_value);
+    pub fn new(init_value: f64, num_samples: usize, max_size: usize) -> Self {
+        let tree = DecisionTree::new(init_value, max_size);
         let indices = SampleIndices::new(num_samples);
         let weight = Weight::new();
 
@@ -165,7 +165,7 @@ impl Particle {
 
                 if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
                     // TODO: divide is riddled with vector allocations
-                    let (left, right) = continuous_rule.divide(&feature_values, &split_val);
+                    let (left, right) = continuous_rule.divide(&feature_values, split_val);
                     (left, right, split_val)
                 } else {
                     return false;
@@ -179,7 +179,7 @@ impl Particle {
                     .collect();
 
                 if let Some(split_val) = one_hot_rule.sample_split_value(&feature_values) {
-                    let (left, right) = one_hot_rule.divide(&feature_values, &split_val);
+                    let (left, right) = one_hot_rule.divide(&feature_values, split_val);
                     (left, right, split_val as f64) // Convert i32 to f64 for consistency
                 } else {
                     return false;
@@ -251,7 +251,7 @@ impl Particle {
         predictions
     }
 
-    /// Checks whether there are any expansion nodes left for growing. If false,
+    /// Checks whether there are any expansion nodes left for growing. If `true`,
     /// then the Particle is "finished" growing.
     pub fn finished(&self) -> bool {
         self.indices.is_empty()

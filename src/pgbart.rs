@@ -115,14 +115,14 @@ impl PgBartState {
 
         let predictions = Array1::from_elem(y.len(), mu);
 
-        // Initialize Particles vector
-        let particles = (0..params.n_trees)
-            .map(|_| Particle::new(leaf_value, X.nrows()))
-            .collect();
-
         // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone();
         let splitting_probs: Vec<f64> = normalized_cumsum(&alpha_vec);
+
+        // Initialize Particles vector
+        let particles = (0..params.n_trees)
+            .map(|_| Particle::new(leaf_value, X.nrows(), alpha_vec.len()))
+            .collect();
 
         let tree_ops = TreeSamplingOps {
             alpha_vec,
@@ -181,7 +181,7 @@ impl PgBartState {
         let mu = self.data.y().mean().unwrap();
         let X = self.data.X();
 
-        tree_ids.for_each(|tree_id| {
+        for tree_id in tree_ids {
             self.iter += 1;
 
             // Get the selected particle (tree) and compute predictions without it
@@ -199,6 +199,7 @@ impl PgBartState {
                 .any(|particle| !particle.finished())
             {
                 local_particles.iter_mut().skip(1).for_each(|particle| {
+                    // println!("Growing...");
                     if particle.grow(&X, self) {
                         self.update_weight(&X, particle, &predictions_minus_old);
                     }
@@ -206,36 +207,48 @@ impl PgBartState {
 
                 // Normalize log-likelihood and resample particles
                 let normalized_weights = normalize_weights(&local_particles[1..]);
-                local_particles = resample_particles(&mut local_particles, &normalized_weights);
+                // println!(
+                //     "normalized weights (after growing): {:?}",
+                //     normalized_weights
+                // );
+                // local_particles = resample_particles(&mut local_particles, &normalized_weights);
+                local_particles = old_resample_particles(&mut local_particles, &normalized_weights);
+                // println!(
+                //     "number of local particles after resampling: {}",
+                //     local_particles.len()
+                // );
             }
 
             // Normalize weights again and select a particle to replace the current tree
             let normalized_weights = normalize_weights(&local_particles);
+            // println!("normalized_weights: {:?}", normalized_weights);
             let new_particle = select_particle(&mut local_particles, &normalized_weights);
 
             // Update the sum of trees with the new particle's predictions
             let new_particle_preds = &new_particle.predict(&X);
             self.predictions = predictions_minus_old + new_particle_preds;
+            // println!("new_predictions: {:?}", new_particle_preds);
+            // println!("self.predictions: {:?}", self.predictions);
 
             // During tuning, update feature split probability and leaf standard deviation
-            if self.tune {
-                if self.iter > self.params.n_trees {
-                    self.update_splitting_probability(&new_particle);
-                }
+            // if self.tune {
+            //     if self.iter > self.params.n_trees {
+            //         self.update_splitting_probability(&new_particle);
+            //     }
 
-                if self.iter > 2 && self.params.leaf_sd.len() <= 1 {
-                    self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
-                } else {
-                    // Update tuning statistics without assigning a new leaf standard deviation
-                    self.tuning_stats.update(&new_particle_preds.to_vec());
-                }
-            } else {
-                self.update_variable_inclusion(&new_particle);
-            }
+            //     if self.iter > 2 && self.params.leaf_sd.len() <= 1 {
+            //         self.params.leaf_sd = self.tuning_stats.update(&new_particle_preds.to_vec());
+            //     } else {
+            //         // Update tuning statistics without assigning a new leaf standard deviation
+            //         self.tuning_stats.update(&new_particle_preds.to_vec());
+            //     }
+            // } else {
+            //     self.update_variable_inclusion(&new_particle);
+            // }
 
             // Replace the current tree with the new particle
             self.particles[tree_id] = new_particle;
-        });
+        }
     }
 
     /// Generate an initial set of particles for _this_ tree.
@@ -251,7 +264,8 @@ impl PgBartState {
         // PgBartState::new
         let particles: Vec<Particle> = (0..self.params.n_particles)
             .map(|i| {
-                let mut particle = Particle::new(leaf_value, X.nrows());
+                let mut particle =
+                    Particle::new(leaf_value, X.nrows(), self.params.init_alpha_vec.len());
 
                 if i == 0 {
                     self.update_weight(X, &mut particle, sum_trees_noi);
@@ -304,9 +318,12 @@ impl PgBartState {
     }
 }
 
-/// Systematic resampling to sample new Particles according to a Particle's weight.
 #[inline(always)]
-pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+pub fn old_resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+    // println!("--- resample particles ---");
+    // println!("num_particles: {}", particles.len());
+    // println!("weights: {:?}", weights);
+
     let num_particles = particles.len();
     let mut resampled_particles = Vec::with_capacity(num_particles);
 
@@ -314,18 +331,30 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     resampled_particles.push(particles[0].clone());
 
     // Resample Particle indices and count number of occurences each index appears
-    let mut index_counts = systematic_resample(weights, num_particles - 1)
-        .map(|idx| idx + 1)
-        .fold(HashMap::with_capacity(num_particles), |mut acc, idx| {
+    let resampled_indices = systematic_resample(&weights, num_particles - 1);
+
+    // println!(
+    //     "resampled_indices: {}, {:?}",
+    //     resampled_indices.len(),
+    //     resampled_indices
+    // );
+
+    let mut resample_idx_counts = resampled_indices.iter().map(|idx| idx + 1).fold(
+        HashMap::with_capacity(num_particles),
+        |mut acc, idx| {
             *acc.entry(idx).or_insert(0) += 1;
             acc
-        });
+        },
+    );
+
+    // println!("resampled_idx_counts: {:?}", resample_idx_counts);
 
     // Stage 1: Process particles that need cloning, i.e. index count > 1
     let mut to_remove = Vec::new();
-    for (&idx, &count) in &index_counts {
+    for (&idx, &count) in &resample_idx_counts {
         if count > 1 {
             let particle = &particles[idx];
+            // println!("idx: {}, particle.weight: {}", idx, particle.weight.log_w);
             resampled_particles.extend((0..count).map(|_| particle.clone()));
             to_remove.push(idx);
         }
@@ -333,15 +362,72 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
 
     // Remove the indices that have already been processed
     for idx in to_remove {
-        index_counts.remove(&idx);
+        resample_idx_counts.remove(&idx);
     }
 
     // Stage 2:  Move remaining particles without cloning
-    let mut indices: Vec<_> = index_counts.keys().copied().collect();
+    let mut indices: Vec<_> = resample_idx_counts.keys().copied().collect();
     indices.sort_unstable_by(|a, b| b.cmp(a));
+    // println!("sorted_indices: {:?}", indices);
 
     for idx in indices {
         resampled_particles.push(particles.swap_remove(idx));
+    }
+
+    resampled_particles
+}
+
+/// Systematic resampling to sample new Particles according to a Particle's weight.
+///
+/// `Particles` contains **all** the `local_particles` whereas `weights` contains the
+/// weights of the local particles skipping the first, i.e., `num_particles - 1 `.
+#[inline(always)]
+pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+    // println!("--- resample particles ---");
+    // println!("num_particles: {}", particles.len());
+    // println!("weights: {:?}", weights);
+
+    let num_particles = particles.len();
+    // let mut resampled_particles = Vec::with_capacity(num_particles);
+    // resampled_particles.push(particles[0].clone());
+
+    // Keep first particle (original tree) and get resampled indices
+    let mut resampled_particles = vec![particles.remove(0)];
+
+    // `num_particles - 1` because weights does not include the first particle
+    // `resampled_indices` already includes a +1 offset to skip the first particle
+    let resampled_indices = systematic_resample(&weights, num_particles - 1);
+    // println!(
+    //     "resampled_indices: {}, {:?}",
+    //     resampled_indices.len(),
+    //     resampled_indices
+    // );
+
+    let resample_idx_counts = resampled_indices.iter().map(|idx| idx + 1).fold(
+        HashMap::with_capacity(num_particles),
+        |mut acc, idx| {
+            *acc.entry(idx).or_insert(0) += 1;
+            acc
+        },
+    );
+
+    // println!("resampled_idx_counts: {:?}", resample_idx_counts);
+
+    // Stage 1: Get particles that appear in resample_indices
+    // Stage 2: Scale weight of that Particle by number of times it appears in resample_indices
+    // Stage 3: Add that Particle to resampled_particles
+    for (&idx, &count) in &resample_idx_counts {
+        let particle = &mut particles[idx - 1];
+        particle.weight.log_w *= count as f64;
+        // println!("idx: {}, particle.weight: {}", idx, particle.weight.log_w);
+    }
+
+    let mut indices: Vec<usize> = resample_idx_counts.into_keys().collect();
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+    // println!("sorted_indices: {:?}", indices);
+
+    for idx in indices {
+        resampled_particles.push(particles.remove(idx - 1));
     }
 
     resampled_particles
@@ -354,13 +440,46 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
 /// the evenly spaced points with a random offset.
 ///
 /// Note: adapted from https://github.com/nchopin/particles
+// #[inline(always)]
+// fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Item = usize> + '_ {
+//     // Generate a uniform random number and use it to create evenly spaced points
+//     let mut rng = rand::thread_rng();
+//     let u = rng.gen::<f64>() / num_samples as f64;
+
+//     // Compute cumulative sum of Particle weights
+//     let cumulative_sum = weights
+//         .iter()
+//         .scan(0.0, |acc, &x| {
+//             *acc += x;
+//             Some(*acc)
+//         })
+//         .collect::<Vec<f64>>();
+
+//     // Iterator state variables
+//     let mut i = 0; // Current sample index
+//     let mut j = 0; // Current position in cumulative sum
+
+//     // from_fn creates a custom iterator that yields the resampled Particle indices
+//     from_fn(move || {
+//         if i < num_samples {
+//             while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64
+//             {
+//                 j += 1;
+//             }
+//             i += 1;
+//             Some(j)
+//         } else {
+//             None
+//         }
+//     })
+// }
+
 #[inline(always)]
-fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Item = usize> + '_ {
+fn systematic_resample(weights: &[f64], num_samples: usize) -> Vec<usize> {
     // Generate a uniform random number and use it to create evenly spaced points
     let mut rng = rand::thread_rng();
     let u = rng.gen::<f64>() / num_samples as f64;
 
-    // Compute cumulative sum of Particle weights
     let cumulative_sum = weights
         .iter()
         .scan(0.0, |acc, &x| {
@@ -369,32 +488,29 @@ fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Ite
         })
         .collect::<Vec<f64>>();
 
-    // Iterator state variables
-    let mut i = 0; // Current sample index
-    let mut j = 0; // Current position in cumulative sum
-
-    // from_fn creates a custom iterator that yields the resampled Particle indices
-    from_fn(move || {
-        if i < num_samples {
-            while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64
-            {
-                j += 1;
-            }
-            i += 1;
-            Some(j)
-        } else {
-            None
+    // Find the indices where the cumulative sum exceeds the evenly spaced points
+    let mut indices = Vec::with_capacity(num_samples);
+    let mut j = 0;
+    for i in 0..num_samples {
+        while j < cumulative_sum.len() && cumulative_sum[j] < u + i as f64 / num_samples as f64 {
+            j += 1;
         }
-    })
+        indices.push(j);
+    }
+
+    indices
 }
 
 /// Sample a Particle proportional to its weight.
 #[inline(always)]
 pub fn select_particle(particles: &mut Vec<Particle>, weights: &[f64]) -> Particle {
+    // println!("--- select particle ---");
+
     let mut rng = thread_rng();
+    // println!("select_particle weights: {:?}", weights);
     let dist = WeightedIndex::new(weights).unwrap();
     let index = dist.sample(&mut rng);
-
+    // println!("sampled index: {}", index);
     // Remove and return the selected particle, transferring ownership
     particles.swap_remove(index)
 }
@@ -405,8 +521,10 @@ pub fn select_particle(particles: &mut Vec<Particle>, weights: &[f64]) -> Partic
 /// the normalization of particle weights is numerically stable.
 #[inline(always)]
 pub fn normalize_weights(particles: &[Particle]) -> Vec<f64> {
-    // Skip the first particle
+    // println!("--- Normalize weights ---");
     let log_weights: Vec<f64> = particles.iter().map(|p| p.weight.log_w).collect();
+
+    // println!("log_weights: {:?}", log_weights);
 
     let max_log_weight = log_weights
         .iter()
@@ -419,6 +537,7 @@ pub fn normalize_weights(particles: &[Particle]) -> Vec<f64> {
         .collect();
 
     let sum_exp: f64 = exp_shifted.iter().sum();
+    // println!("sum_exp: {}", sum_exp);
 
     exp_shifted.iter().map(|&w| w / sum_exp).collect()
 }

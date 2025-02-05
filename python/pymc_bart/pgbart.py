@@ -150,6 +150,7 @@ class PGBART(ArrayStepShared):
         # Record time to quantify performance improvements
         t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
+        # step(self.state, self.tune)
         sum_trees, variable_inclusion = step(self.state, self.tune)
         t1 = perf_counter()
 
