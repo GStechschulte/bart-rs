@@ -28,10 +28,7 @@ pub mod data;
 pub mod forest;
 pub mod math;
 pub mod ops;
-pub mod particle;
-pub mod pgbart;
 pub mod split_rules;
-pub mod tree;
 
 use crate::data::ExternalData;
 use crate::ops::Response;
@@ -105,14 +102,6 @@ fn initialize(
 
     Ok(StateWrapper { state })
 }
-
-// #[pyfunction]
-// fn step<'py>(py: Python<'py>, wrapper: &mut StateWrapper, tune: bool) {
-//     // Update whether or not `pm.sampler` is in tuning phase or not
-//     // wrapper.state.tune = tune;
-//     // Run the Particle Gibbs sampler
-//     wrapper.state.step();
-// }
 
 #[pyfunction]
 fn step<'py>(

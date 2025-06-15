@@ -3,7 +3,7 @@ use pymc_bart::tree::{DecisionTree, TreeError};
 #[test]
 fn test_new_tree() {
     let init_val = 0.0;
-    let tree = DecisionTree::new(init_val);
+    let tree = DecisionTree::new(init_val, 1000);
 
     assert_eq!(tree.feature[0], 0 as usize);
     assert_eq!(tree.threshold[0], 0.0);
@@ -12,7 +12,7 @@ fn test_new_tree() {
 
 #[test]
 fn test_add_root_node() {
-    let mut tree = DecisionTree::new(0.0);
+    let mut tree = DecisionTree::new(0.0, 1000);
     let root_index = tree.add_node(0, 0.0, 5.0);
 
     assert_eq!(root_index, 1 as usize);
@@ -23,7 +23,7 @@ fn test_add_root_node() {
 
 #[test]
 fn test_split_node() {
-    let mut tree = DecisionTree::new(0.0);
+    let mut tree = DecisionTree::new(0.0, 1000);
     let root_index = tree.add_node(0, 0.0, 5.0);
 
     let result = tree.split_node(root_index, 0, 0.5, 2.0, 3.0);
@@ -49,7 +49,7 @@ fn test_split_node() {
 
 #[test]
 fn test_split_non_leaf_node() {
-    let mut tree = DecisionTree::new(0.0);
+    let mut tree = DecisionTree::new(0.0, 1000);
 
     let (left_index, right_index) = tree
         .split_node(0, 0, 0.5, 2.0, 3.0)
@@ -63,7 +63,7 @@ fn test_split_non_leaf_node() {
 
 #[test]
 fn test_split_invalid_node() {
-    let tree = DecisionTree::new(0.0);
+    let tree = DecisionTree::new(0.0, 1000);
 
     // There are no left or right children yet
     assert_eq!(tree.left_child(1), None);
@@ -72,7 +72,7 @@ fn test_split_invalid_node() {
 
 #[test]
 fn test_is_leaf() {
-    let mut tree = DecisionTree::new(0.0);
+    let mut tree = DecisionTree::new(0.0, 1000);
 
     // Root should be a leaf initially
     assert!(tree.is_leaf(0));

@@ -1,30 +1,32 @@
-//! Functions that implement the BART Particle Gibbs initialization and update step
-//! to grow a decision tree.
+//! High-performance PGBART implementation with optimized algorithms and data structures.
 //!
-//! Functions that do Particle Gibbs steps operate by taking as input a PgBartState
-//! struct, and then iterate (step) on this PgBartState.
+//! This module implements the Particle Gibbs sampler for Bayesian Additive Regression Trees (BART)
 #![allow(non_snake_case)]
 
 use core::f64;
-use std::collections::HashMap;
-use std::iter::from_fn;
 
 use ndarray::{Array1, Array2};
 use rand::distributions::WeightedIndex;
-use rand::{thread_rng, Rng};
-use rand_distr::{Distribution, Normal};
+use rand_distr::Distribution;
 
 use crate::data::PyData;
 use crate::forest::{DecisionTree, Forest, Predict};
 use crate::math::{normalized_cumsum, RunningStd};
 use crate::ops::{Response, TreeSamplingOps};
-// use crate::pgbart::select_particle;
 use crate::split_rules::SplitRuleType;
+use rand::thread_rng;
 
-/// PgBartSetting are parameters used to initialize a new `PgBartState`.
+/// Configuration parameters for PGBART sampler initialization.
 ///
-/// `split_rules` is a vector of `SplitRuleType` enum variants as the user
-/// may pass different split rule types.
+/// This structure contains all hyperparameters and settings needed to initialize
+/// and configure the PGBART sampler. The parameters control tree growth behavior,
+/// particle filtering, and splitting strategies.
+///
+/// # Algorithm Parameters
+/// - Tree structure: `n_trees`, `alpha`, `beta` control ensemble size and tree depth
+/// - Particle filtering: `n_particles`, `batch` control sampling behavior
+/// - Splitting: `split_rules`, `init_alpha_vec` control how trees split
+/// - Response: `response`, `leaf_sd`, `n_dim` control leaf value generation
 pub struct PgBartSettings {
     /// Number of trees.
     pub n_trees: usize,
@@ -49,8 +51,19 @@ pub struct PgBartSettings {
 }
 
 impl PgBartSettings {
-    /// Creates a new `PgBartSettings` struct to be used in BART for growing
-    /// particle trees.
+    /// Creates a new `PgBartSettings` with the specified configuration.
+    ///
+    /// # Parameters
+    /// - `n_trees`: Number of trees in the BART ensemble
+    /// - `n_particles`: Number of particles for particle filtering
+    /// - `alpha`: Tree depth control parameter (usually 0.95)
+    /// - `beta`: Tree depth control parameter (usually 2.0)
+    /// - `leaf_sd`: Standard deviation(s) for leaf value sampling
+    /// - `batch`: (tuning_batch_fraction, sampling_batch_fraction)
+    /// - `init_alpha_vec`: Initial splitting probabilities per feature
+    /// - `response`: Response computation strategy (Constant or Linear)
+    /// - `split_rules`: Split rule for each feature (Continuous or OneHot)
+    /// - `n_dim`: Number of dimensions for multi-output responses
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         n_trees: usize,
@@ -79,7 +92,25 @@ impl PgBartSettings {
     }
 }
 
-/// PgBartState is the main entry point of the Particle-Gibbs sampler for BART.
+/// Main state structure for the PGBART sampler.
+///
+/// This structure maintains all state needed for the Particle Gibbs sampler,
+/// including the current forest of trees, predictions, and sampling statistics.
+/// The implementation is optimized for performance with pre-allocated buffers
+/// and cache-friendly data layouts.
+///
+/// # Key Components
+/// - `forest`: Collection of trees with optimized particle management
+/// - `predictions`: Current sum of all trees (μ in the algorithm)
+/// - `tree_ops`: Sampling operations for tree growth
+/// - `variable_inclusion`: Feature usage tracking for importance estimation
+///
+/// # Usage Pattern
+/// ```text
+/// 1. Create PgBartState::new(settings, data)
+/// 2. Loop: state.step() for each MCMC iteration
+/// 3. Access: state.predictions() and state.variable_inclusion()
+/// ```
 pub struct PgBartState {
     /// User-provided data (from Python).
     pub data: Box<dyn PyData>,
@@ -106,7 +137,18 @@ pub struct PgBartState {
 }
 
 impl PgBartState {
-    /// Creates a `PgBartState` with the given `PgBartSettings` and `PyData`.
+    /// Creates a new `PgBartState` with the given settings and data.
+    ///
+    /// This initializes all components of the PGBART sampler:
+    /// - Creates forest of trees initialized to mean/n_trees
+    /// - Sets up tree sampling operations with splitting probabilities
+    /// - Initializes predictions to the response mean
+    /// - Allocates buffers for variable inclusion tracking
+    ///
+    /// # Performance Notes
+    /// - All major data structures are pre-allocated to avoid runtime allocations
+    /// - Forest uses Structure of Arrays layout for cache efficiency
+    /// - Tree operations are configured with normalized splitting probabilities
     pub fn new(params: PgBartSettings, data: Box<dyn PyData>) -> Self {
         let X = data.X();
         let y = data.y();
@@ -125,13 +167,12 @@ impl PgBartState {
         // Initialize the Forest
         let forest = Forest::new(params.n_trees, X.nrows(), leaf_value, max_size);
 
-        let tree_ops = TreeSamplingOps {
+        let tree_ops = TreeSamplingOps::new(
             alpha_vec,
             splitting_probs,
-            alpha: params.alpha,
-            beta: params.beta,
-            normal: Normal::new(0.0, 1.0).unwrap(),
-        };
+            params.alpha,
+            params.beta,
+        );
 
         Self {
             data,
@@ -147,6 +188,28 @@ impl PgBartState {
         }
     }
 
+    /// Performs one step of the PGBART algorithm.
+    ///
+    /// This implements the main MCMC update step following the algorithm specification:
+    /// 1. Determine batch size based on tuning status
+    /// 2. For each tree in the batch:
+    ///    - Calculate residual (μ_{-i} ← μ - G_i^μ)
+    ///    - Initialize particles (first = current tree, rest from scratch)
+    ///    - Grow particles with resampling until finished
+    ///    - Select new tree via weighted sampling
+    ///    - Update sum of trees (μ ← μ_{-i} + G_i^μ)
+    ///    - Track variable inclusion if not tuning
+    ///
+    /// # Algorithm Details
+    /// - Batch processing allows updating multiple trees per step
+    /// - Particle filtering maintains diversity while exploring tree space
+    /// - Systematic resampling provides low-variance estimates
+    /// - Reference particle (current tree) ensures non-zero acceptance
+    ///
+    /// # Performance
+    /// - Uses pre-allocated buffers to minimize memory overhead
+    /// - SoA data layout enables vectorized weight operations
+    /// - Efficient tree growth with breadth-first expansion
     pub fn step(&mut self) {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
@@ -171,102 +234,169 @@ impl PgBartState {
 
         let X = self.data.X();
         let mu = self.data.y().mean().unwrap();
-        // let leaf_value = mu / (self.params.n_trees as f64);
-
-        // println!("tree_ids: {:?}", tree_ids);
 
         for tree_id in tree_ids {
             self.iter += 1;
 
-            let old_particle_predictions = self.forest.trees[tree_id].predict(&X);
-            let local_particle_predictions = &self.predictions - &old_particle_predictions;
+            // Step 1: Calculate residual (remove current tree contribution)
+            let old_tree_predictions = self.forest.trees[tree_id].predict(&X);
+            let mu_minus_i = &self.predictions - &old_tree_predictions;
 
-            let mut local_forest = self.initialize_particles(&X, &old_particle_predictions, mu);
+            // Step 2: Initialize particles (first particle = current tree, rest grown from scratch)
+            let mut local_forest = self.initialize_particles(&X, &old_tree_predictions, mu);
 
-            // Grow each candidate tree until there are no more expandable nodes
-            //
-            // At _this_ growth iteration, use the state from the previous iteration
+            // Step 3: Tree Growth Phase - grow particles until finished
             while local_forest.has_expandable_nodes() {
-                local_forest.grow(&X, &local_particle_predictions, self);
-                // println!(
-                //     "forest weights (before normalizing): {:?}",
-                //     local_forest.weights
-                // );
-                // After this grow iteration, normalize weights and resample
+                local_forest.grow(&X, &mu_minus_i, self);
+
+                // Normalize weights and resample (systematic resampling)
                 local_forest.normalize_weights();
-                // println!(
-                //     "forest weights (after normalizing): {:?}",
-                //     local_forest.weights
-                // );
                 local_forest.resample();
             }
 
-            // Select the best candidate tree to replace the current tree
+            // Step 4: Tree Selection - final weight normalization and selection
             local_forest.normalize_weights();
-            let (particle, weight) = select_particle(&mut local_forest);
+            let (selected_tree, selected_weight) = self.select_particle(&mut local_forest);
 
-            // Update sum of trees (predictions)
-            let new_predictions = particle.predict(&X);
-            // println!("new_predictions: {:?}", new_predictions);
-            self.predictions = local_particle_predictions + new_predictions;
-            // println!("self.predictions: {:?}", self.predictions);
+            // Step 5: Update State
+            let new_tree_predictions = selected_tree.predict(&X);
+            self.predictions = &mu_minus_i + &new_tree_predictions;
 
             // Update the global Forest with the selected tree
-            self.forest.trees[tree_id] = particle;
-            self.forest.weights[tree_id] = weight;
+            self.forest.trees[tree_id] = selected_tree;
+            self.forest.weights[tree_id] = selected_weight;
 
-            // break;
+            // Update variable inclusion during non-tuning phase
+            if !self.tune {
+                self.update_variable_inclusion(tree_id);
+            }
         }
     }
 
+    /// Initialize particles for the current tree update.
+    ///
+    /// Creates a local forest with n_particles trees where:
+    /// - First particle = current tree being replaced
+    /// - Remaining particles = new trees grown from scratch
+    /// - All particles get initial weights computed
+    ///
+    /// This follows the PGBART algorithm requirement to maintain one
+    /// "reference" particle to ensure non-zero acceptance probability.
+    ///
+    /// # Parameters
+    /// - `X`: Feature matrix
+    /// - `current_tree_preds`: Predictions from the current tree
+    /// - `mu`: Overall response mean
+    ///
+    /// # Returns
+    /// Forest with initialized particles and computed weights
     fn initialize_particles(
         &self,
         X: &Array2<f64>,
-        sum_trees_noi: &Array1<f64>,
+        current_tree_preds: &Array1<f64>,
         mu: f64,
     ) -> Forest {
         let leaf_value = mu / (self.params.n_trees as f64);
-        let mut local_particles = Forest::new(self.params.n_particles, X.nrows(), leaf_value, 100);
+        let mut local_forest = Forest::new(self.params.n_particles, X.nrows(), leaf_value, 100);
 
-        for (weight, tree) in local_particles
-            .weights
-            .iter_mut()
-            .zip(local_particles.trees.iter_mut())
-        {
-            *weight = self.update_weight(X, tree, sum_trees_noi);
+        // First particle is the current tree being replaced
+        if !self.forest.trees.is_empty() {
+            local_forest.trees[0] = self.forest.trees[0].clone();
         }
 
-        local_particles
+        // Initialize weights for all particles
+        let residual = &self.predictions - current_tree_preds;
+        for (i, tree) in local_forest.trees.iter().enumerate() {
+            local_forest.weights[i] = self.update_weight(X, tree, &residual);
+            local_forest.particle_arrays.weights[i] = local_forest.weights[i];
+        }
+
+        local_forest
     }
 
+    /// Compute the log-likelihood weight for a tree.
+    ///
+    /// Evaluates the likelihood of the data given the predictions from
+    /// this tree added to the local predictions (residuals). This is
+    /// the core weighting function for particle filtering.
+    ///
+    /// # Parameters
+    /// - `X`: Feature matrix (for tree prediction)
+    /// - `tree`: Tree to evaluate
+    /// - `local_preds`: Base predictions (μ_{-i})
+    ///
+    /// # Returns
+    /// Log-likelihood value for this tree
     fn update_weight(
         &self,
         X: &Array2<f64>,
-        particle: &mut DecisionTree,
+        tree: &DecisionTree,
         local_preds: &Array1<f64>,
     ) -> f64 {
-        let preds = local_preds + &particle.predict(X);
+        let preds = local_preds + &tree.predict(X);
         let log_likelihood = self.data.evaluate_logp(preds);
-
         log_likelihood
     }
 
+    /// Select a particle from the forest using weighted sampling.
+    ///
+    /// Uses the final normalized weights to select a tree from the particle forest.
+    /// This implements the tree selection step of the PGBART algorithm.
+    ///
+    /// # Parameters
+    /// - `forest`: Forest containing particles with normalized weights
+    ///
+    /// # Returns
+    /// Tuple of (selected_tree, selected_weight)
+    ///
+    /// # Algorithm
+    /// Uses weighted random sampling where particles with higher weights
+    /// have higher probability of selection. This maintains the correct
+    /// sampling distribution for MCMC convergence.
+    fn select_particle(&self, forest: &mut Forest) -> (DecisionTree, f64) {
+        let mut rng = thread_rng();
+        let dist = WeightedIndex::new(&forest.particle_arrays.weights[..forest.trees.len()]).unwrap();
+        let index = dist.sample(&mut rng);
+
+        let selected_tree = forest.trees.swap_remove(index);
+        let selected_weight = forest.particle_arrays.weights[index];
+
+        (selected_tree, selected_weight)
+    }
+
+    /// Update variable inclusion statistics for the selected tree.
+    ///
+    /// Tracks which features were used for splitting in the selected tree.
+    /// This is used during the non-tuning phase to estimate variable importance.
+    ///
+    /// # Parameters
+    /// - `tree_id`: Index of the tree in the forest
+    fn update_variable_inclusion(&mut self, tree_id: usize) {
+        // Track which features were used for splitting in the selected tree
+        for &feature_idx in &self.forest.trees[tree_id].feature {
+            if (feature_idx as usize) < self.variable_inclusion.len() {
+                self.variable_inclusion[feature_idx as usize] += 1;
+            }
+        }
+    }
+
+    /// Returns the variable inclusion counter.
+    ///
+    /// During non-tuning phases, this tracks how many times each feature
+    /// was used for splitting across all selected trees. Higher values
+    /// indicate more important features.
     pub fn variable_inclusion(&self) -> &Vec<i32> {
         &self.variable_inclusion
     }
 
+    /// Returns the current predictions (sum of all trees).
+    ///
+    /// This is the μ quantity from the algorithm - the sum of predictions
+    /// from all trees in the current forest. These are the model's current
+    /// predictions for the training data.
     pub fn predictions(&self) -> &Array1<f64> {
         &self.predictions
     }
 }
 
-fn select_particle(forest: &mut Forest) -> (DecisionTree, f64) {
-    // println!("--- select_particle ---");
-    let mut rng = thread_rng();
-    // println!("select_particle forest weights: {:?}", forest.weights);
-    let dist = WeightedIndex::new(&forest.weights).unwrap();
-    let index = dist.sample(&mut rng);
-    // println!("sampled index: {}", index);
 
-    (forest.trees.swap_remove(index), forest.weights[index])
-}

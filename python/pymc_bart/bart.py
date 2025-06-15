@@ -131,7 +131,7 @@ class BART(Distribution):
         beta: float = 2.0,
         response: str = "constant",
         split_rules: Optional[List[str]] = None,
-        split_prior: Optional[npt.NDArray[np.float_]] = None,
+        split_prior: Optional[npt.NDArray[np.float64]] = None,
         separate_trees: Optional[bool] = False,
         **kwargs,
     ):
@@ -218,7 +218,7 @@ class BART(Distribution):
         return mean
 
 
-def preprocess_xy(X, Y) -> Tuple[npt.NDArray[np.float_], npt.NDArray[np.float_]]:
+def preprocess_xy(X, Y) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     if isinstance(Y, (Series, DataFrame)):
         Y = Y.to_numpy()
     if isinstance(X, (Series, DataFrame)):

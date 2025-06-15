@@ -20,8 +20,8 @@ def test_propensity(args):
 
     coords = {"coeffs": list(X.columns), "obs": range(len(X))}
     with pm.Model(coords=coords) as model_ps:
-        X_data = pm.MutableData("X", X)
-        t_data = pm.MutableData("t", t)
+        X_data = pm.Data("X", X)
+        t_data = pm.Data("t", t)
 
         mu = pmb.BART("mu", X, t, m=args.trees)
         p = pm.Deterministic("p", pm.math.invprobit(mu))
@@ -62,37 +62,37 @@ def test_bikes(args):
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
 
-        idata = pm.sample(
-            chains=4,
-            tune=args.tune,
-            draws=args.draws,
-            step=[
-                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-            ],
-            random_seed=RANDOM_SEED,
-        )
+        # idata = pm.sample(
+        #     chains=4,
+        #     tune=args.tune,
+        #     draws=args.draws,
+        #     step=[
+        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        #     ],
+        #     random_seed=RANDOM_SEED,
+        # )
 
-        posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
-                trace=idata, random_seed=RANDOM_SEED
-            )
+        # posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
+        #         trace=idata, random_seed=RANDOM_SEED
+        #     )
 
-        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    print(idata["posterior"]["alpha"])
-    pmb.plot_convergence(idata, var_name="mu")
-    plt.show()
+    # print(idata["posterior"]["alpha"])
+    # pmb.plot_convergence(idata, var_name="mu")
+    # plt.show()
 
-    az.plot_ppc(
-        data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
-    )
-    plt.show()
+    # az.plot_ppc(
+    #     data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
+    # )
+    # plt.show()
 
     # step.astep(1)
     # sum_trees, stats = step.astep(1)
 
-    # for i in range(250):
-    #     sum_trees, stats = step.astep(i)
-    #     print(f"iter: {i}, time: {stats[0].get('time')}")
+    for i in range(250):
+        sum_trees, stats = step.astep(i)
+        print(f"iter: {i}, time: {stats[0].get('time')}")
 
 
 def test_coal(args):
