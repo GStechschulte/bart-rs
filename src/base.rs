@@ -1,7 +1,4 @@
-use numpy::{
-    ndarray::{s, Array, Axis, Ix, Ix1, Ix2},
-    IxDyn, PyArrayMethods, PyReadonlyArray,
-};
+use numpy::ndarray::{Array, Ix1, Ix2};
 
 /// Current state for the Particle Gibbs algorithm
 #[derive(Debug)]

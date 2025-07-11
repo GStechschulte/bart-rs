@@ -3,7 +3,7 @@
 //! This module provides different strategies for sampling leaf values in BART trees,
 //! including MOTR-BART, TVP-BART, and GP-BART approaches.
 
-use numpy::ndarray::{Array1, Array2};
+use numpy::ndarray::Array1;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Normal};
 

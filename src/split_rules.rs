@@ -2,7 +2,7 @@
 //! supports sampling split values from a set of candidates and dividing data points based on
 //! the chosen split value.
 
-use numpy::ndarray::{Array1, Array2, Axis};
+use numpy::ndarray::Array2;
 use rand::rngs::SmallRng;
 use rand::Rng;
 

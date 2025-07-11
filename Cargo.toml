@@ -22,7 +22,7 @@ name = "pymc_bart"
 crate-type = ["cdylib", "rlib"]
 
 [[bench]]
-name = "particle_mutation_benchmark"
+name = "planting"
 harness = false
 
 
