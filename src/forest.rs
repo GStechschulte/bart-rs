@@ -1,5 +1,6 @@
 use bumpalo::{collections::Vec, Bump};
 use numpy::{ndarray::Array, Ix1, Ix2};
+use rand::rngs::SmallRng;
 
 pub type SplitVariable = usize;
 pub type SplitValue = f64;
@@ -8,6 +9,13 @@ pub type LeafIndex = usize;
 
 pub trait Predict {
     fn predict(&self, X: Array<f64, Ix2>) -> Array<f64, Ix1>;
+}
+
+/// Types of Moves for a Tree. Common moves are `grow` and `prune`. Currently,
+/// only grow moves are supported.
+pub trait Moves {
+    /// Propose a move
+    fn grow(&self, rng: &mut SmallRng, tree: &Tree, data: Array<f64, Ix2>);
 }
 
 /// A Forest owns the arena and passes a reference to it to a Tree.
@@ -73,5 +81,15 @@ impl<'arena> Forest<'arena> {
     pub fn add_particle(&mut self, init_leaf: LeafValue, n_samples: usize, max_depth: usize) {
         let tree = Tree::stump(self.arena, init_leaf, n_samples, max_depth);
         self.trees.push(tree);
+    }
+}
+
+impl<'arena> Moves for Tree<'arena> {
+    /// Propose a grow move for a Tree.
+    ///
+    /// TODO: I am not sure if this method should return the proposed growth (split variable, split value, node to grow, etc.)
+    /// or if it should perform the growth mutably in place?
+    fn grow(&self, rng: &mut SmallRng, tree: &Tree, data: Array<f64, Ix2>) {
+        todo!("Not yet implemented");
     }
 }
