@@ -16,7 +16,7 @@
 
 import warnings
 from multiprocessing import Manager
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -99,8 +99,9 @@ class BART(Distribution):
     split_prior : Optional[List[float]], default None.
         List of positive numbers, one per column in input data.
         Defaults to None, all covariates have the same prior probability to be selected.
-    split_rules : Optional[List[str]], default None
-        List of split rules, one per column in input data. Allows using different split rules for different columns. Default is "ContinuousSplitRule". Other options are "OneHotSplitRule" and "SubsetSplitRule", both meant for categorical variables.
+    split_rules : Optional[Dict[int, str]], default None
+        Dictionary of split rules, where the key-value pair indicates the split rule for that dimension.
+        Default is "ContinuousSplitRule". Other options are "OneHotSplitRule" and "SubsetSplitRule", both meant for categorical variables.
     shape: : Optional[Tuple], default None
         Specify the output shape. If shape is different from (len(X)) (the default), train a
         separate tree for each value in other dimensions.
@@ -130,7 +131,7 @@ class BART(Distribution):
         alpha: float = 0.95,
         beta: float = 2.0,
         response: str = "constant",
-        split_rules: Optional[List[str]] = None,
+        split_rules: Optional[Dict[int, str]] = None,
         split_prior: Optional[npt.NDArray[np.float64]] = None,
         separate_trees: Optional[bool] = False,
         **kwargs,
@@ -146,16 +147,26 @@ class BART(Distribution):
                 "The 'linear' option is experimental and not well tested. Use with caution."
             )
 
-        if isinstance(split_rules, (list, str)):
-            supported_split_rules = ["ContinuousSplit", "OneHotSplit"]
-            rules = split_rules if isinstance(split_rules, list) else [split_rules]
-            invalid_rules = [
-                rule for rule in rules if rule not in supported_split_rules
-            ]
+        if isinstance(split_rules, dict):
+            required_dims =  set(range(X.shape[-1]))
+            passed_dims = set(split_rules.keys())
+
+            if not required_dims.issubset(passed_dims):
+                missing_dims = sorted(list(required_dims - passed_dims))
+                raise ValueError(f"Missing split rule(s) for dimension(s): {missing_dims} of 'X'")
+
+            supported_split_rules = {"ContinuousSplit", "OneHotSplit", "SubsetSplit"}
+            passed_rules = set(split_rules.values())
+            invalid_rules = passed_rules - supported_split_rules
+
             if invalid_rules:
                 raise ValueError(
                     f"rule(s) must be one of {supported_split_rules}. Received invalid rule(s): {invalid_rules}"
                 )
+        elif isinstance(split_rules, type(None)):
+            # Build the default split rules
+            default_split_rule = "ContinuousSplit"
+            split_rules = {dim: default_split_rule for dim in range(X.shape[-1])}
 
         manager = Manager()
         cls.all_trees = manager.list()

@@ -1,102 +1,164 @@
 //! Split rule trait definitions and implementations for decision trees. The module
-//! supports sampling split values from a set of candidates and dividing data points based on //! the chosen split value.
+//! supports sampling split values from a set of candidates and dividing data points based on
+//! the chosen split value.
 
-use std::f64;
-use std::iter::Iterator;
-
+use numpy::ndarray::{Array1, Array2, Axis};
+use rand::rngs::SmallRng;
 use rand::Rng;
 
-/// Split rule interface for defining split rule strategies.
 pub trait SplitRule {
-    /// The data type associated with the split rule strategy.
+    // The data type associated with the split rule strategy
     type Value;
 
-    /// Samples a split value from the candidate points.
-    fn sample_split_value(&self, candidates: &[Self::Value]) -> Option<Self::Value>;
-    /// Divides the candidates left and right according to the split value.
-    fn divide(
+    /// Samples a split value from the candidate points
+    fn sample_split_value(
         &self,
         candidates: &[Self::Value],
-        split_value: Self::Value,
+        rng: &mut SmallRng,
+    ) -> Option<Self::Value>;
+
+    /// Splits data indices based on feature values and threshold
+    fn split_data_indices(
+        &self,
+        data: &Array2<f64>,
+        feature_idx: usize,
+        threshold: Self::Value,
+        data_indices: &[usize],
     ) -> (Vec<usize>, Vec<usize>);
 }
 
-/// Standard continuous split rule. Pick a pivot value and split
-/// depending on if variable is smaller or greater than the value picked.
-pub struct ContinuousSplit;
+/// Continuous split rule.
+///
+/// Pick a pivot value and split depending on if the variable value is smaller or
+/// greater than the value picked.
+pub struct ContinuousSplitRule;
 
-impl SplitRule for ContinuousSplit {
+impl SplitRule for ContinuousSplitRule {
     type Value = f64;
 
-    fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
-        if candidates.len() > 1 {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
-        } else {
-            None
+    fn sample_split_value(
+        &self,
+        candidates: &[Self::Value],
+        rng: &mut SmallRng,
+    ) -> Option<Self::Value> {
+        if candidates.is_empty() {
+            return None;
         }
+
+        // For continuous variables, we can sample any value between min and max
+        let min_val = candidates.iter().copied().fold(f64::INFINITY, f64::min);
+        let max_val = candidates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+        if min_val >= max_val {
+            return None;
+        }
+
+        // Sample uniformly between min and max
+        Some(rng.gen_range(min_val..max_val))
     }
 
-    fn divide(&self, candidates: &[f64], split_value: f64) -> (Vec<usize>, Vec<usize>) {
-        // Partition vectors will likely have at least half of candidate values in each
-        let mut left: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
-        let mut right: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+    fn split_data_indices(
+        &self,
+        data: &Array2<f64>,
+        feature_idx: usize,
+        threshold: Self::Value,
+        data_indices: &[usize],
+    ) -> (Vec<usize>, Vec<usize>) {
+        let mut left_indices = Vec::new();
+        let mut right_indices = Vec::new();
 
-        for idx in 0..candidates.len() {
-            if candidates[idx] <= split_value {
-                left.push(idx)
+        for &idx in data_indices {
+            if data[[idx, feature_idx]] < threshold {
+                left_indices.push(idx);
             } else {
-                right.push(idx);
+                right_indices.push(idx);
             }
         }
 
-        (left, right)
+        (left_indices, right_indices)
     }
 }
 
-/// Choose a single categorical value and branch on it if the variable is that value or not.
+/// Choose a single categorical value and branch on it if the variable value is
+/// that value or not.
 pub struct OneHotSplit;
 
 impl SplitRule for OneHotSplit {
     type Value = i32;
 
-    fn sample_split_value(&self, candidates: &[i32]) -> Option<i32> {
-        if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
-        } else {
-            None
+    fn sample_split_value(
+        &self,
+        candidates: &[Self::Value],
+        rng: &mut SmallRng,
+    ) -> Option<Self::Value> {
+        if candidates.is_empty() {
+            return None;
         }
+
+        // For categorical variables, randomly select one of the unique values
+        let unique_vals: std::collections::HashSet<_> = candidates.iter().copied().collect();
+        let unique_vec: Vec<_> = unique_vals.into_iter().collect();
+
+        if unique_vec.len() <= 1 {
+            return None;
+        }
+
+        Some(unique_vec[rng.gen_range(0..unique_vec.len())])
     }
 
-    fn divide(&self, candidates: &[i32], split_value: i32) -> (Vec<usize>, Vec<usize>) {
-        // Partition vectors will likely have at least half of candidate values in each
-        let mut left: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
-        let mut right: Vec<usize> = Vec::with_capacity(candidates.len() / 2);
+    fn split_data_indices(
+        &self,
+        data: &Array2<f64>,
+        feature_idx: usize,
+        threshold: Self::Value,
+        data_indices: &[usize],
+    ) -> (Vec<usize>, Vec<usize>) {
+        let mut left_indices = Vec::new();
+        let mut right_indices = Vec::new();
 
-        for idx in 0..candidates.len() {
-            if candidates[idx] == split_value {
-                left.push(idx)
+        for &idx in data_indices {
+            if data[[idx, feature_idx]] as i32 == threshold {
+                left_indices.push(idx);
             } else {
-                right.push(idx);
+                right_indices.push(idx);
             }
         }
 
-        (left, right)
+        (left_indices, right_indices)
     }
 }
 
-/// Choose a random subset of the categorical values and branch on belonging to that set.
-///
-/// This is the approach taken by Sameer K. Deshpande.
-/// flexBART: Flexible Bayesian regression trees with categorical predictors. arXiv,
-/// `link <https://arxiv.org/abs/2211.04459>`__
-pub struct SubsetSplit;
-
-/// Holds the split rule strategies as enum variants.
-pub enum SplitRuleType {
-    /// Continuous implements the `ContinuousSplit` strategy.
-    Continuous(ContinuousSplit),
-    /// OneHot implements the `OneHotSplit` strategy.
+pub enum SplitRules {
+    Continuous(ContinuousSplitRule),
     OneHot(OneHotSplit),
+}
+
+impl SplitRules {
+    pub fn sample_split_value(&self, candidates: &[f64], rng: &mut SmallRng) -> Option<f64> {
+        match self {
+            SplitRules::Continuous(rule) => rule.sample_split_value(candidates, rng),
+            SplitRules::OneHot(rule) => {
+                let int_candidates: Vec<i32> = candidates.iter().map(|&x| x as i32).collect();
+                rule.sample_split_value(&int_candidates, rng)
+                    .map(|x| x as f64)
+            }
+        }
+    }
+
+    pub fn split_data_indices(
+        &self,
+        data: &Array2<f64>,
+        feature_idx: usize,
+        threshold: f64,
+        data_indices: &[usize],
+    ) -> (Vec<usize>, Vec<usize>) {
+        match self {
+            SplitRules::Continuous(rule) => {
+                rule.split_data_indices(data, feature_idx, threshold, data_indices)
+            }
+            SplitRules::OneHot(rule) => {
+                rule.split_data_indices(data, feature_idx, threshold as i32, data_indices)
+            }
+        }
+    }
 }

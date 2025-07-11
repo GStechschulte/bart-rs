@@ -87,6 +87,7 @@ class CompiledPyMCModel:
     >>> compiled_model = CompiledPyMCModel(model, [x])
     >>> function_ptr = compiled_model.get_function_pointer()
     """
+
     def __init__(self, model, vars):
         """Initialize and compile the PyMC model.
 
@@ -142,18 +143,49 @@ class CompiledPyMCModel:
         shared : dict
             Shared variable replacements
         """
+        # Initial parameter values from the model
         initial_values = model.initial_point()
-        shape = initial_values.get(str(vars[0])).shape[0]
-        shared = make_shared_replacements(initial_values, vars, model)
+
+        # Get actual variables used during sampling. This handles transformations (e.g., sigma --> sigma_log__)
+        # Use value_vars which contains the transformed variables that actually exist in initial_values.
+        if vars is None:
+            # model.value_vars contains the transformed variables (e.g., sigma_log__)
+            # that match the keys in initial_values
+            value_vars = model.value_vars
+        else:
+            # If vars provided, convert them to their corresponding value variables
+            value_vars = []
+            for var in vars:
+                if var in model.free_RVs:
+                    # Get the corresponding value variable (transformed version)
+                    value_var = model.rvs_to_values[var]
+                    value_vars.append(value_var)
+                else:
+                    # Variable is already a value variable
+                    value_vars.append(var)
+
+        # Calculate total number of parameters across all free variables
+        shape = sum(initial_values[var.name].size for var in value_vars)
+
+        # Create shared variable replacements for PyTensor compilation. This
+        # function only creates shared variables for parameters that need to
+        # be replaced during compilation.
+        #
+        # NOTE: Old implementation
+        # shape = initial_values.get(str(vars[0])).shape[0]
+        # shared = make_shared_replacements(initial_values, vars, model)
+        #
+        shared = make_shared_replacements(initial_values, value_vars, model)
+
         out_vars = [model.datalogp]
 
+        # Join non-shared inputs and prepare for compilation
+        # This separates model parameters from shared/observed data
         new_out, new_joined_inputs = join_nonshared_inputs(
-            initial_values, out_vars, vars, shared
+            initial_values, out_vars, value_vars, shared
         )
 
-        logp_fn = compile(
-            inputs=[new_joined_inputs], outputs=new_out[0], mode="NUMBA"
-        )
+        logp_fn = compile(inputs=[new_joined_inputs], outputs=new_out[0], mode="NUMBA")
         logp_fn.trust_input = True
 
         return shape, logp_fn, shared
@@ -165,6 +197,19 @@ class CompiledPyMCModel:
         that will persist in memory and can be accessed directly from
         the compiled function. This avoids runtime pointer dereferencing
         and provides better cache locality for frequent calls.
+
+        Shared variables refer to data that needs to be accesible during
+        logp computation, but is not being sampled. Common examples are
+        pre-computed values, hyperparameters, etc.
+
+        Examples
+        --------
+        >>> import py
+        >>> with pm.Model() as model:
+        ...     x = pm.Normal('x', 0, 1)
+        ...     y = pm.Normal('y', x, 1, observed=data)
+        >>> compiled_model = CompiledPyMCModel(model, [x])
+        >>> function_ptr = compiled_model.get_function_pointer()
 
         Returns
         -------
@@ -181,10 +226,10 @@ class CompiledPyMCModel:
         return arrays
 
     # TODO: fast update for shared arrays
-    # @njit
-    # def _fast_update(self, dest, src):
-    #     for i in range(len(dest)):
-    #         dest[i] = src[i]
+    @njit
+    def _fast_update(self, dest, src):
+        for i in range(len(dest)):
+            dest[i] = src[i]
 
     def update_shared_arrays(self):
         """Update the persistent shared arrays with new values from the function storage.
@@ -199,10 +244,14 @@ class CompiledPyMCModel:
         'logp_fn_ptr.input_storage' contains PyTensor shared variables used
         for computing the log probability. The first element [0] is the main
         input parameter array, elements [1:] are shared variables.
+
+        Observed data (e.g., design matrix `X` and targets `y`) are stored in
+        input storage.
         """
         for array, storage in zip(self.logp_args, self.logp_fn_ptr.input_storage[1:]):
-            np.copyto(array, storage.storage[0])
-            # self._fast_update(array, storage.storage[0])
+            # NOTE: np.copyto is the old implementation
+            # np.copyto(array, storage.storage[0])
+            self._fast_update(array, storage.storage[0])
 
     def _generate_logp_function(self):
         """Generate the final C-callable log probability function.

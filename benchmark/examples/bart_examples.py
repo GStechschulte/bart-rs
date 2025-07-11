@@ -62,20 +62,6 @@ def test_bikes(args):
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
 
-        # idata = pm.sample(
-        #     chains=4,
-        #     tune=args.tune,
-        #     draws=args.draws,
-        #     step=[
-        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #     ],
-        #     random_seed=RANDOM_SEED,
-        # )
-
-        # posterior_predictive_oos_regression_train = pm.sample_posterior_predictive(
-        #         trace=idata, random_seed=RANDOM_SEED
-        #     )
-
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
     # print(idata["posterior"]["alpha"])
@@ -109,13 +95,10 @@ def test_coal(args):
     # express data as the rate number of disaster per year
     y_data = hist
 
+    split_rules = {0: "ContinuousSplit"}
+
     with pm.Model() as model_coal:
-        mu = pmb.BART(
-            "mu",
-            X=x_data,
-            Y=np.log(y_data),
-            m=args.trees
-        )
+        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), m=args.trees)
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
@@ -132,9 +115,9 @@ def test_coal(args):
 
     # sum_trees, stats = step.astep(1)
 
-    for i in range(500):
-         sum_trees, stats = step.astep(i)
-         print(f"iter: {i}, time: {stats[0].get('time')}")
+    # for i in range(500):
+    #     sum_trees, stats = step.astep(i)
+    #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
     # _, ax = plt.subplots(figsize=(10, 6))
     # rates = idata.posterior["exp_mu"] / 4
@@ -148,6 +131,7 @@ def test_coal(args):
     # ax.set_ylabel("rate")
     # plt.show()
 
+
 def test_asymmetric_laplace(args):
     bmi = pd.read_csv(pm.get_data("bmi.csv"))
 
@@ -156,10 +140,7 @@ def test_asymmetric_laplace(args):
     y_stack = np.stack([bmi.bmi.values] * 3)
     quantiles = np.array([[0.1, 0.5, 0.9]]).T
 
-    coords = {
-        "quantiles": quantiles.flatten(),
-        "n_obs": np.arange(X.shape[0])
-    }
+    coords = {"quantiles": quantiles.flatten(), "n_obs": np.arange(X.shape[0])}
 
     with pm.Model(coords=coords) as model:
         # mu = pmb.BART("mu", X, y, m=50, dims=["quantiles", "n_obs"])
@@ -179,7 +160,6 @@ def test_asymmetric_laplace(args):
 
 
 def main(args):
-
     if args.model == "coal":
         test_coal(args)
     elif args.model == "bikes":
