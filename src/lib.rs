@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    ffi::{c_double, c_void},
-};
+use std::{collections::HashMap, ffi::c_void};
 
 pub mod base;
 pub mod forest;
@@ -12,24 +9,14 @@ pub mod split_rules;
 
 use crate::base::PgBartState;
 use crate::sampler::{LogpFunc, PgBartSampler};
-use crate::split_rules::SplitRules;
 
+use numpy::PyArray;
 use numpy::{
-    ndarray::{s, Array, Array1, Axis, Ix1, Ix2},
-    PyArrayMethods, PyReadonlyArray, PyUntypedArrayMethods,
+    ndarray::{Array1, Ix1, Ix2},
+    IntoPyArray, PyArray1, PyArrayDyn, PyReadonlyArray,
 };
-use pyo3::{
-    exceptions::PyTimeoutError,
-    ffi::Py_uintptr_t,
-    intern,
-    prelude::*,
-    types::{PyList, PyTuple},
-};
-use rand::{
-    rng,
-    rngs::{SmallRng, StdRng},
-    RngCore, SeedableRng,
-};
+use pyo3::prelude::*;
+use rand::{rngs::SmallRng, SeedableRng};
 
 #[pyclass]
 #[derive(Clone)] // Clone is useful for passing settings around
@@ -94,9 +81,9 @@ struct PySampler {
 #[pymethods]
 impl PySampler {
     #[staticmethod]
-    #[pyo3(text_signature = "(X, y, settings)")]
+    #[pyo3(text_signature = "(x, y, settings)")]
     fn init(
-        X: PyReadonlyArray<f64, Ix2>,
+        x: PyReadonlyArray<f64, Ix2>,
         y: PyReadonlyArray<f64, Ix1>,
         model: usize,
         settings: PyBartSettings,
@@ -104,15 +91,15 @@ impl PySampler {
         // to_owned_array performs a deep copy of the underlyng data
         let logp: LogpFunc = unsafe { std::mem::transmute(model as *const c_void) };
 
-        let X_arr = X.to_owned_array();
-        let y_arr = y.to_owned_array();
+        let x_arr = x.as_array().to_owned();
+        let y_arr = y.as_array().to_owned();
 
         let forest = vec![0.0; settings.n_trees];
         let weights = vec![0.0; settings.n_trees];
-        let predictions = Array1::from_elem(y.len(), y_arr.mean().unwrap());
+        let predictions = Array1::from_elem(y_arr.len(), y_arr.mean().unwrap());
 
-        let state = PgBartState::new(X_arr, y_arr, forest, weights, predictions);
-        let sampler = PgBartSampler::new(logp, settings);
+        let state = PgBartState::new(forest, weights, predictions);
+        let sampler = PgBartSampler::new(x_arr, y_arr, logp, settings);
 
         Ok(PySampler {
             sampler: sampler,
@@ -123,14 +110,16 @@ impl PySampler {
     /// Runs the Particle Gibbs sampler sequentially for `M` iterations where `M` is the number
     /// of trees.
     ///
-    /// A single step will initialize a set of particles `N`, of which one will replace the `m'th` tree. To decide which particle will replace the current tree, the `N`
-    /// particles are grown until the probability of a leaf node expanding is less than a
-    /// random value in the interval [0, 1].
+    /// A single step will initialize a set of particles `N`, of which one will replace the `m'th` tree. To decide
+    /// which particle will replace the current tree, the `N` particles are grown until the probability of a
+    /// leaf node expanding is less than a random value in the interval [0, 1].
     ///
     /// The grown particles are resampled according to their log-likelihood, of which
     /// one is selected to replace the `m'th` tree.
-    fn step(&mut self) {
-        self.sampler.step(&mut self.state);
+    /// Runs the Particle Gibbs sampler sequentially.
+    fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let sum_trees = self.sampler.step(&mut self.state);
+        Ok(PyArray1::from_vec(py, sum_trees)) // Zero-copy
     }
 }
 

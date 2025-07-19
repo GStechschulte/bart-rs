@@ -23,6 +23,12 @@ crate-type = ["cdylib", "rlib"]
 
 [[bench]]
 name = "planting"
+path = "benches/planting.rs"
+harness = false
+
+[[bench]]
+name = "resample"
+path = "benches/resample.rs"
 harness = false
 
 

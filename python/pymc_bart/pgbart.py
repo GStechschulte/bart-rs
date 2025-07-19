@@ -147,6 +147,7 @@ class PGBART(ArrayStepShared):
         # elif self.bart_response == "gp":
         #     settings = PyBartSettings.Gp()
 
+        self._sum_of_trees_buffer = np.zeros(self.bart.Y.shape[0], dtype=np.float64)
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
         max_nodes_per_tree = 2 ** (max_depth + 1) - 1
 
@@ -157,6 +158,8 @@ class PGBART(ArrayStepShared):
         print(f"alpha: {self.bart.alpha}, beta: {self.bart.beta}")
         print(f"max_depth: {max_depth}")
         print(f"max_nodes_per_tree: {max_nodes_per_tree}")
+        print(f"self._sum_of_trees_buffer: {self._sum_of_trees_buffer}")
+
 
         # Build the Particle Gibbs sampler
         settings = PyBartSettings(
@@ -182,14 +185,12 @@ class PGBART(ArrayStepShared):
         # state = pg.init(...)
         # new_state, info = pg.step(rng, state)
 
-        pg_bart = PySampler.init(
-            X=self.X,
+        self.pg_bart = PySampler.init(
+            x=self.X,
             y=self.bart.Y,
             model=self.compiled_pymc_model.get_function_pointer(),
             settings=settings
         )
-
-        # print(pg_bart.step())
 
         self.tune = True
         super().__init__(vars, self.compiled_pymc_model.shared)
@@ -200,18 +201,19 @@ class PGBART(ArrayStepShared):
     #     self.compiled_pymc_model.update_shared_arrays()
     #     # step(self.state, self.tune)
     #     sum_trees, variable_inclusion = step(self.state, self.tune)
+        sum_trees = self.pg_bart.step()
         t1 = perf_counter()
 
-        print(t1 - t0)
+        print((t1 - t0) * 1e6)
 
         stats = {
             "variable_inclusion": np.array([0.0]),
             "tune": self.tune,
             "time": t1 - t0,
         }
-        sum_trees = np.array([0.0])
 
-        return sum_trees, [stats]
+        # return sum_trees, [stats]
+        return sum_trees
 
 
     @staticmethod
@@ -249,7 +251,7 @@ def calculate_max_tree_depth(alpha: float, beta: float, probs_leaf: float) -> in
 
     probs_not_leaf = 1 - probs_leaf
     reciprocal = 1 / probs_not_leaf
-    term = int(reciprocal) * alpha
+    term = reciprocal * alpha
     exponent = 1.0 / beta
     depth = int(math.pow(term, exponent) - 1)
     return depth

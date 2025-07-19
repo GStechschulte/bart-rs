@@ -98,7 +98,14 @@ def test_coal(args):
     split_rules = {0: "ContinuousSplit"}
 
     with pm.Model() as model_coal:
-        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), m=args.trees)
+        mu = pmb.BART(
+            "mu",
+            X=x_data,
+            Y=np.log(y_data),
+            alpha=0.95,
+            beta=2.0,
+            m=args.trees
+        )
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
@@ -113,7 +120,8 @@ def test_coal(args):
         # )
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    # sum_trees, stats = step.astep(1)
+    sum_trees = step.astep(1)
+    print(sum_trees)
 
     # for i in range(500):
     #     sum_trees, stats = step.astep(i)
