@@ -89,7 +89,7 @@ class BART(Distribution):
     m : int
         Number of trees.
     response : str
-        How the leaf_node values are computed. Available options are ``constant`` or ``linear``. Defaults to ``constant``.
+        How the leaf_node values are computed. Available options are ``gaussian`` or ``linear``. Defaults to ``gaussian``.
     alpha : float
         Controls the prior probability over the depth of the trees.
         Should be in the (0, 1) interval.
@@ -130,13 +130,13 @@ class BART(Distribution):
         m: int = 50,
         alpha: float = 0.95,
         beta: float = 2.0,
-        response: str = "constant",
+        response: str = "gaussian",
         split_rules: Optional[Dict[int, str]] = None,
         split_prior: Optional[npt.NDArray[np.float64]] = None,
         separate_trees: Optional[bool] = False,
         **kwargs,
     ):
-        supported_responses = {"constant", "linear"}
+        supported_responses = {"gaussian", "linear"}
         if response not in supported_responses:
             raise ValueError(
                 f"Invalid response option: '{response}'. Must be one of {supported_responses}."

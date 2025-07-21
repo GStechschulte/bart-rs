@@ -1,11 +1,21 @@
-use bumpalo::Bump;
-use numpy::ndarray::{Array, Ix1, Ix2};
+use numpy::ndarray::{Array, Ix1};
 
 // pub trait SamplingAlgorithm<'arena, S, I> {
 //     type Error;
 
 //     fn init(&self, arena: &'arena Bump)
 // }
+
+#[derive(Clone, Copy)]
+pub struct Depth<const N: usize>;
+
+pub trait DepthBound {
+    const MAX_DEPTH: usize;
+}
+
+impl<const N: usize> DepthBound for Depth<N> {
+    const MAX_DEPTH: usize = N;
+}
 
 /// Current state for the Particle Gibbs algorithm
 #[derive(Debug)]

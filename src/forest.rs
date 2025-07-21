@@ -1,51 +1,78 @@
-use std::collections::TryReserveError;
+use std::collections::HashMap;
 
 use bumpalo::{collections::Vec as BumpVec, Bump};
 use numpy::{ndarray::Array, Ix1, Ix2};
-use rand::{rngs::SmallRng, Rng};
+use rand::Rng;
 
-use crate::base::PgBartState;
 use crate::response::ResponseStrategy;
-use crate::split_rules::{SplitRule, SplitRules};
+use crate::split_rules::{ContinuousSplit, SplitRules};
+
+// Sentinel value to indicate a leaf node (no split variable)
+pub const LEAF_SENTINEL: usize = usize::MAX;
 
 pub type SplitVariable = usize;
 pub type SplitValue = f64;
 pub type LeafValue = f64;
 pub type LeafIndex = usize;
+pub type NodeIndex = usize;
 
 pub trait Predict {
     /// Computes predictions given a design matrix using the learned
     /// decision tree
-    fn predict(&self, X: Array<f64, Ix2>) -> Array<f64, Ix1>;
+    fn predict(&self, data: Array<f64, Ix2>) -> Array<f64, Ix1>;
 }
 
 // Core strategy traits
-pub trait Update<S> {
-    type Info;
-    type Error;
-
-    fn update(&self, rng: &mut impl Rng, state: S) -> Result<(S, Self::Info), Self::Error>;
+pub trait Update<const MAX_DEPTH: usize> {
+    fn update(&self, rng: &mut impl Rng, tree: &mut Tree<'_, MAX_DEPTH>);
 }
 
-pub struct TreeUpdate<Split, Response> {
-    max_depth: usize,
-    split_strategy: Split,
-    response_strategy: Response,
+/// A Grow performs an update (mutation) to a tree using a split strategy to compute the split threshold
+/// for a sampled feature and a response strategy to compute the leaf value of leaf nodes.
+pub struct Grow<R: ResponseStrategy> {
+    pub split_strategy: HashMap<usize, SplitRules>,
+    pub response_strategy: R,
 }
 
-// impl<Split, Response, S> Update for TreeUpdate<Split, Response>
-// where
-//     S: PgBartState,
-//     Split: SplitRule,
-//     Response: ResponseStrategy,
-// {
-//     type Info = TreeUpdateInfo;
-//     type Error = TreeError;
+impl<const MAX_DEPTH: usize, R> Update<MAX_DEPTH> for Grow<R>
+where
+    R: ResponseStrategy,
+{
+    /// Mutate (grow) a tree using the split and response strategies
+    fn update(&self, rng: &mut impl Rng, tree: &mut Tree<'_, MAX_DEPTH>) {
+        println!("Growing (updating) tree...");
+        // TODO: Identify the leaf node to expand
+        let node_to_expand = 0;
+        println!("node_to_expand: {:?}", node_to_expand);
 
-//     fn update(&self, rng: &mut impl Rng, state: S) -> Result<(S, Self::Info), Self::Error> {
-//         todo!("Tree growing logic using the SplitStrategy and ResponseStrategy go here...")
-//     }
-// }
+        // TODO: Compute probability whether or not to convert this leaf node to an internal node
+
+        // The sampled feature to split with
+        let sampled_feature_idx = rng.random_range(0..self.split_strategy.len());
+
+        let split_rule = self
+            .split_strategy
+            .get(&sampled_feature_idx)
+            .unwrap_or(&SplitRules::Continuous(ContinuousSplit));
+
+        // Data indices of this leaf node
+        let data_indices = tree.get_leaf_data_indices(node_to_expand);
+
+        println!("{:?}", data_indices);
+
+        // TODO: Compute the eligible candidate values
+        let candidate_values = vec![5., 10., 20., 12., 15.];
+        let Some(threshold) = split_rule.sample_split_value(rng, &candidate_values) else {
+            return;
+        };
+
+        // TODO: Compute the left and right samples with `split_rule.split_data_indices()`
+
+        // TODO: Sample a leaf and right leaf value using the samples
+
+        // TODO: Split *this* leaf node into an internal node and add the two new leaf nodes
+    }
+}
 
 /// A Forest owns the arena and passes a reference to it to a Tree.
 #[derive(Debug)]
@@ -58,7 +85,7 @@ pub struct Tree<'arena, const MAX_DEPTH: usize> {
 
 impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
     fn stump(arena: &'arena Bump, init_leaf: LeafValue, n_samples: usize) -> Self {
-        let max_leaf_nodes = 1 << (MAX_DEPTH + 1); // 2^(depth)
+        let max_leaf_nodes = 1 << MAX_DEPTH; // 2^(depth)
         let max_internal_nodes = max_leaf_nodes - 1;
 
         // A stump starts with one leaf node
@@ -68,8 +95,7 @@ impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
         // All samples initially point to the first leaf (index = 0)
         let leaf_indices = BumpVec::from_iter_in((0..n_samples).map(|_| 0), arena);
 
-        // Pre-allocate remaining vectors with enough capacity for a full tree to avoid
-        // reallocations
+        // Pre-allocate remaining vectors with enough capacity for a full tree to avoid reallocations
         Self {
             split_var: BumpVec::with_capacity_in(max_internal_nodes, arena),
             split_value: BumpVec::with_capacity_in(max_internal_nodes, arena),
@@ -154,7 +180,7 @@ impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
     }
 
     /// Add a random split to grow the tree (for benchmarking purposes)
-    pub fn add_random_split(&mut self, rng: &mut SmallRng, n_features: usize) {
+    pub fn add_random_split(&mut self, rng: &mut impl Rng, n_features: usize) {
         if self.leaf_values.len() == 0 {
             return;
         }
@@ -176,6 +202,40 @@ impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
         self.leaf_values
             .push(original_leaf_value - rng.gen::<f64>() * 0.1);
     }
+
+    /// Adds a new node to the `Tree` and returns the location of this node
+    /// in the splitting variable vector.
+    pub fn add_node(
+        &mut self,
+        split_variable: SplitVariable,
+        split_value: SplitValue,
+        leaf_value: LeafValue,
+    ) -> LeafIndex {
+        let node_id = self.split_var.len();
+        self.split_var.push(split_variable);
+        self.split_value.push(split_value);
+        self.leaf_values.push(leaf_value);
+        node_id
+    }
+
+    pub fn split_node(
+        &mut self,
+        node_idx: NodeIndex,
+        split_variable: SplitVariable,
+        split_value: SplitValue,
+        left_value: LeafValue,
+        right_value: LeafValue,
+    ) -> (usize, usize) {
+        // Update the current node
+        self.split_var[node_idx] = split_variable;
+        self.split_value[node_idx] = split_value;
+
+        // Add new left and right leaf nodes
+        let left_child_idx = self.add_node(0, 0.0, left_value);
+        let right_child_idx = self.add_node(0, 0.0, right_value);
+
+        (left_child_idx, right_child_idx)
+    }
 }
 
 /// Ephemeral set of Particles.
@@ -184,9 +244,9 @@ impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
 /// being proposed and evaluated for a tree update in the ensemble of trees (forest).
 #[derive(Debug)]
 pub struct Forest<'arena, const MAX_DEPTH: usize> {
-    arena: &'arena Bump,
-    trees: BumpVec<'arena, Tree<'arena, MAX_DEPTH>>,
-    weights: BumpVec<'arena, f64>,
+    pub arena: &'arena Bump,
+    pub trees: BumpVec<'arena, Tree<'arena, MAX_DEPTH>>,
+    pub weights: BumpVec<'arena, f64>,
 }
 
 impl<'arena, const MAX_DEPTH: usize> Forest<'arena, MAX_DEPTH> {
@@ -260,7 +320,7 @@ impl<'arena, const MAX_DEPTH: usize> Forest<'arena, MAX_DEPTH> {
         n_samples: usize,
         n_splits: usize,
         n_features: usize,
-        rng: &mut SmallRng,
+        rng: &mut impl Rng,
     ) {
         let mut tree = Tree::<'arena, MAX_DEPTH>::stump(self.arena, init_leaf, n_samples);
 

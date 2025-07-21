@@ -1,26 +1,19 @@
 use std::ffi::c_double;
 use std::time::Instant;
 
-use bumpalo::{collections::Vec as BumpVec, Bump};
+use bumpalo::Bump;
 use numpy::ndarray::{Array, Ix1, Ix2};
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 
 use crate::base::PgBartState;
-use crate::forest::Forest;
-use crate::resampling::{ResamplingStrategies, ResamplingStrategy, SystematicResampling};
-use crate::response::{GaussianResponseStrategy, ResponseStrategies};
-use crate::split_rules::{ContinuousSplitRule, SplitRules};
+use crate::forest::{Forest, Update};
+use crate::resampling::{ResamplingStrategy, SystematicResampling};
 use crate::PyBartSettings;
 
-pub type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
-
-pub trait WeightFn {
-    fn weight(&self, x: Array<f64, Ix1>) -> f64;
-}
+pub type LogpFn = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
 /// Calls the LogpFunc callback to compute the log-likelihood
-fn weight(logp: LogpFunc, x: Array<f64, Ix1>) -> f64 {
+fn weight(logp: LogpFn, x: Array<f64, Ix1>) -> f64 {
     unsafe { (logp)(x.as_ptr(), x.len()) }
 }
 
@@ -37,108 +30,89 @@ pub fn normalize_weights(weights: &[f64]) -> Vec<f64> {
 }
 
 /// Particle Gibbs sampler for BART
-pub struct PgBartSampler {
-    /// User-provided design matrix
+pub struct PgBartSampler<const MAX_DEPTH: usize, U, R> {
+    /// Design matrix.
     data: Array<f64, Ix2>,
-    /// User-provided response (target) vector
+    /// Target (response) vector.
     targets: Array<f64, Ix1>,
-    model: LogpFunc,
+    /// Update.
+    update: U,
+    /// Resample.
+    resample: R,
+    /// Weight.
+    weight_fn: LogpFn,
+    /// Defines.
     settings: PyBartSettings,
-    split_strategy: SplitRules,
-    response_strategy: ResponseStrategies,
-    resampling_strategy: ResamplingStrategies,
 }
 
-impl PgBartSampler {
+impl<const MAX_DEPTH: usize, U: Update<MAX_DEPTH>, R: ResamplingStrategy>
+    PgBartSampler<MAX_DEPTH, U, R>
+{
     pub fn new(
         data: Array<f64, Ix2>,
         targets: Array<f64, Ix1>,
-        model: LogpFunc,
+        update_fn: U,
+        resample_fn: R,
+        weight_fn: LogpFn,
         settings: PyBartSettings,
     ) -> Self {
-        // Initialize default strategies
-        let split_strategy = SplitRules::Continuous(ContinuousSplitRule);
-        let response_strategy = ResponseStrategies::Gaussian(GaussianResponseStrategy::new(
-            settings.init_leaf_std.powi(2),
-        ));
-        let resampling_strategy = ResamplingStrategies::Systematic(SystematicResampling);
-
         Self {
             data: data,
             targets: targets,
-            model: model,
+            update: update_fn,
+            resample: resample_fn,
+            weight_fn: weight_fn,
             settings: settings,
-            split_strategy,
-            response_strategy,
-            resampling_strategy,
         }
     }
 
-    pub fn step(&mut self, state: &mut PgBartState) -> Vec<f64> {
+    pub fn step(&mut self, rng: &mut impl Rng, state: &mut PgBartState) -> Vec<f64> {
         println!("Stepping...");
         let start_time = Instant::now();
-
-        // Setup phase
 
         // Arena lives only as long as this function call
         let arena = Bump::new();
 
-        // let example_preds =
-        //     Array::<f64, Ix1>::from_elem(self.y.len(), self.settings.init_leaf_value);
-        // let example_weights = vec![0.25; self.settings.n_trees];
-        // let example_forest = vec![0.5; self.settings.n_trees];
+        for tree in 0..self.settings.n_trees {
+            let mut forest = Forest::<MAX_DEPTH>::new(&arena, self.settings.n_particles);
 
-        // let example_state = PgBartState {
-        //     forest: example_forest,
-        //     weights: example_weights,
-        //     predictions: example_preds,
-        // };
+            // Initialize Particle trees
+            for _ in 0..self.settings.n_particles {
+                forest.plant_random_tree(
+                    self.settings.init_leaf_value,
+                    self.targets.len(),
+                    10,
+                    self.data.ncols(),
+                    rng,
+                );
+                let predictions =
+                    Array::<f64, Ix1>::from_elem(self.targets.len(), self.settings.init_leaf_value);
+                let ll = weight(self.weight_fn, predictions);
+                forest.add_weight(ll);
+            }
 
-        // Dispatch to choose the pre-compiled optimized worker function
-        let predictions = match self.settings.max_depth {
-            1..=4 => self.tree_step::<5>(state, &arena),
-            6..=9 => self.tree_step::<10>(state, &arena),
-            11..=14 => self.tree_step::<15>(state, &arena),
-            _ => panic!("MAX_DEPTH is too deep"),
-        };
+            // Update (grow) each particle tree
+            forest
+                .trees
+                .iter_mut()
+                .for_each(|tree| self.update.update(rng, tree));
+
+            // Normalize weights
+            let weights = forest.weights();
+            let norm_weights = normalize_weights(weights);
+
+            // Resample particle trees
+            let indices = SystematicResampling::resample(rng, &norm_weights);
+            forest.resample_trees(&indices).unwrap();
+
+            // Make new predictions (sum of trees)
+            // let new_predictions_vec = vec![self.settings.init_leaf_value; self.targets.len()];
+        }
+
+        let new_predictions_vec = vec![self.settings.init_leaf_value; self.targets.len()];
 
         let duration = start_time.elapsed();
         println!("time: {:?}", duration);
-
-        predictions
-    }
-
-    /// Worker function to monomorphize the creation of the Forest and Trees.
-    fn tree_step<'a, const MAX_DEPTH: usize>(
-        &self,
-        state: &mut PgBartState,
-        arena: &'a Bump,
-    ) -> Vec<f64> {
-        let mut setup_rng = SmallRng::seed_from_u64(42);
-        let mut forest = Forest::<MAX_DEPTH>::new(arena, self.settings.n_particles);
-
-        for _ in 0..self.settings.n_particles {
-            forest.plant_random_tree(
-                self.settings.init_leaf_value,
-                self.targets.len(),
-                10,
-                self.data.ncols(),
-                &mut setup_rng,
-            );
-            let predictions =
-                Array::<f64, Ix1>::from_elem(self.targets.len(), self.settings.init_leaf_value);
-            let ll = weight(self.model, predictions);
-            forest.add_weight(ll);
-        }
-
-        let weights = forest.weights();
-        let norm_weights = normalize_weights(weights);
-        let indices = SystematicResampling::resample(&mut setup_rng, &norm_weights);
-        forest.resample_trees(&indices).unwrap();
-
-        // let new_predictions =
-        //     Array::<f64, Ix1>::from_elem(self.y.len(), self.settings.init_leaf_value);
-        let new_predictions_vec = vec![self.settings.init_leaf_value; self.targets.len()];
 
         new_predictions_vec
     }
@@ -151,37 +125,37 @@ impl PgBartSampler {
 //
 // Steps through all of the trees, and for each tree, grows N particle trees, where one is proposed
 // to replace the current tree.
-fn step_trees<Rng, U, W, R>(
-    rng: &mut Rng,
-    state: &mut PgBartState,
-    update_fn: &U,
-    weight_fn: &W,
-    resample_fn: &R,
-) -> PgBartState
-where
-    Rng: rand::Rng,
-    U: FnMut(&mut Rng) -> PgBartState,
-    W: WeightFn,
-    R: ResamplingStrategy,
-{
-    // Initialize a Forest (set of Particle trees) for this step
+// fn step_trees<Rng, U, W, R>(
+//     rng: &mut Rng,
+//     state: &mut PgBartState,
+//     update_fn: &U,
+//     weight_fn: &W,
+//     resample_fn: &R,
+// ) -> PgBartState
+// where
+//     Rng: rand::Rng,
+//     U: FnMut(&mut Rng) -> PgBartState,
+//     W: WeightFn,
+//     R: ResamplingStrategy,
+// {
+// Initialize a Forest (set of Particle trees) for this step
 
-    // Weight these Particle trees
+// Weight these Particle trees
 
-    // Update step (apply kernel aka grow each Tree sequentially)
+// Update step (apply kernel aka grow each Tree sequentially)
 
-    // Weight update step
-    // let tree_predictions = Array::from_elem(shape, elem);
-    // let weights = weight_fn.weight(x)
+// Weight update step
+// let tree_predictions = Array::from_elem(shape, elem);
+// let weights = weight_fn.weight(x)
 
-    // Resampling step
+// Resampling step
 
-    // let new_state = PgBartState {
-    //     forest: vec![1, 2, 3],
-    //     weights: vec![0.5, 0.3, 0.2],
-    //     predictions: Array::<f64, Ix1>::from_iter(0.5..1.0),
-    // };
+// let new_state = PgBartState {
+//     forest: vec![1, 2, 3],
+//     weights: vec![0.5, 0.3, 0.2],
+//     predictions: Array::<f64, Ix1>::from_iter(0.5..1.0),
+// };
 
-    // new_state
-    todo!("Not implemented")
-}
+// new_state
+//     todo!("Not implemented")
+// }

@@ -1,9 +1,9 @@
 //! Split rule trait definitions and implementations for decision trees. The module
 //! supports sampling split values from a set of candidates and dividing data points based on
 //! the chosen split value.
-
 use numpy::ndarray::Array2;
-use rand::rngs::SmallRng;
+use pyo3::exceptions::PyValueError;
+use pyo3::PyResult;
 use rand::Rng;
 
 pub trait SplitRule {
@@ -13,8 +13,8 @@ pub trait SplitRule {
     /// Samples a split value from the candidate points
     fn sample_split_value(
         &self,
+        rng: &mut impl Rng,
         candidates: &[Self::Value],
-        rng: &mut SmallRng,
     ) -> Option<Self::Value>;
 
     /// Splits data indices based on feature values and threshold
@@ -31,15 +31,16 @@ pub trait SplitRule {
 ///
 /// Pick a pivot value and split depending on if the variable value is smaller or
 /// greater than the value picked.
-pub struct ContinuousSplitRule;
+#[derive(Clone, Copy, Debug)]
+pub struct ContinuousSplit;
 
-impl SplitRule for ContinuousSplitRule {
+impl SplitRule for ContinuousSplit {
     type Value = f64;
 
     fn sample_split_value(
         &self,
+        rng: &mut impl Rng,
         candidates: &[Self::Value],
-        rng: &mut SmallRng,
     ) -> Option<Self::Value> {
         if candidates.is_empty() {
             return None;
@@ -81,6 +82,7 @@ impl SplitRule for ContinuousSplitRule {
 
 /// Choose a single categorical value and branch on it if the variable value is
 /// that value or not.
+#[derive(Clone, Copy, Debug)]
 pub struct OneHotSplit;
 
 impl SplitRule for OneHotSplit {
@@ -88,8 +90,8 @@ impl SplitRule for OneHotSplit {
 
     fn sample_split_value(
         &self,
+        rng: &mut impl Rng,
         candidates: &[Self::Value],
-        rng: &mut SmallRng,
     ) -> Option<Self::Value> {
         if candidates.is_empty() {
             return None;
@@ -128,18 +130,30 @@ impl SplitRule for OneHotSplit {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum SplitRules {
-    Continuous(ContinuousSplitRule),
+    Continuous(ContinuousSplit),
     OneHot(OneHotSplit),
 }
 
 impl SplitRules {
-    pub fn sample_split_value(&self, candidates: &[f64], rng: &mut SmallRng) -> Option<f64> {
+    pub fn from_str(rule_name: &str) -> PyResult<Self> {
+        match rule_name {
+            "ContinuousSplit" => Ok(SplitRules::Continuous(ContinuousSplit)),
+            "OneHotSplit" => Ok(SplitRules::OneHot(OneHotSplit)),
+            _ => Err(PyValueError::new_err(format!(
+                "Unknown split rule: '{}'. Supported split rules are 'ContinuousSplit' and 'OneHotSplit'.",
+                rule_name
+            ))),
+        }
+    }
+
+    pub fn sample_split_value(&self, rng: &mut impl Rng, candidates: &[f64]) -> Option<f64> {
         match self {
-            SplitRules::Continuous(rule) => rule.sample_split_value(candidates, rng),
+            SplitRules::Continuous(rule) => rule.sample_split_value(rng, candidates),
             SplitRules::OneHot(rule) => {
                 let int_candidates: Vec<i32> = candidates.iter().map(|&x| x as i32).collect();
-                rule.sample_split_value(&int_candidates, rng)
+                rule.sample_split_value(rng, &int_candidates)
                     .map(|x| x as f64)
             }
         }

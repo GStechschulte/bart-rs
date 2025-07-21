@@ -171,10 +171,9 @@ class PGBART(ArrayStepShared):
             alpha=self.bart.alpha,
             beta=self.bart.beta,
             split_prior=splitting_probs,
-            split_rules=self.bart.split_rules,
+            split_rules_py=self.bart.split_rules,
             response_rule=self.bart.response,
-            batch_size=batch,
-            seed=seed
+            batch_size=batch
         )
 
         # INFO: Only at the end do we return the State structure back to Python to avoid
