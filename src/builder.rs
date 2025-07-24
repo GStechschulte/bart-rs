@@ -1,9 +1,8 @@
 //! Builder pattern for constructing BART samplers with static dispatch
 
-use std::collections::HashMap;
 use std::rc::Rc;
 
-use numpy::ndarray::{Array1, Array2};
+use numpy::ndarray::Array1;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 use rand::rngs::SmallRng;
@@ -11,9 +10,7 @@ use rand::rngs::SmallRng;
 use crate::base::BartState;
 use crate::particle::{Particle, Tree};
 use crate::resampling::SystematicResampling;
-use crate::response::ResponseStrategies;
 use crate::sampler::ParticleGibbsSampler;
-use crate::split_rules::SplitRules;
 use crate::update::{BARTContext, BARTWeighter, Moves};
 
 type Sampler127 = ParticleGibbsSampler<127, Moves, BARTWeighter, SystematicResampling>;

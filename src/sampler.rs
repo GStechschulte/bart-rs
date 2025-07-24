@@ -1,14 +1,11 @@
-use std::ffi::c_double;
 use std::rc::Rc;
-use std::time::Instant;
 
-use numpy::ndarray::{Array, Ix1, Ix2};
 use rand::Rng;
 
 use crate::base::BartState;
 use crate::particle::Particle;
 use crate::resampling::ResamplingStrategy;
-use crate::update::{BARTContext, BARTProposal, MutationDecision, Update, Weight};
+use crate::update::{BARTProposal, MutationDecision, Update, Weight};
 
 pub struct ParticleGibbsSampler<const MAX_NODES: usize, U, W, R> {
     update: U,

@@ -15,7 +15,7 @@ use crate::split_rules::SplitRules;
 use crate::update::BARTContext;
 
 use numpy::{
-    ndarray::{Array1, Ix1, Ix2},
+    ndarray::{Ix1, Ix2},
     PyArray1, PyReadonlyArray,
 };
 use pyo3::prelude::*;

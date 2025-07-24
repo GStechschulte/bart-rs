@@ -1,5 +1,3 @@
-use rand::Rng;
-use rand_distr::Normal;
 use std::{f64, rc::Rc, usize};
 
 // A Particle is a shared pointer to a tree
@@ -25,7 +23,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         let mut split_var = Vec::with_capacity(MAX_NODES);
         let mut split_val = Vec::with_capacity(MAX_NODES);
         let mut leaf_val = Vec::with_capacity(MAX_NODES);
-        let mut leaf_indices = vec![0; n_samples];
+        let leaf_indices = vec![0; n_samples];
 
         // Initialize the root as a leaf
         split_var.push(usize::MAX);
