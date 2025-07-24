@@ -4,6 +4,9 @@
 //! based on their normalized weights.
 use rand::Rng;
 
+use pyo3::exceptions::PyValueError;
+use pyo3::PyResult;
+
 /// Resampling interface for implementing different resampling methods
 pub trait ResamplingStrategy {
     /// Resample particle indices based on their normalized weights
@@ -16,6 +19,7 @@ pub trait ResamplingStrategy {
 /// `u` to determine which bin (interval) each particle `u_i` lands in. Provides
 /// a lower variance than multinomial resampling and is the preferred method for most
 /// applications.
+#[derive(Clone, Copy, Debug)]
 pub struct SystematicResampling;
 
 impl ResamplingStrategy for SystematicResampling {
@@ -57,6 +61,7 @@ impl ResamplingStrategy for SystematicResampling {
 ///
 /// Standard multinomial resampling where each particle is independently
 /// sampled according to its weight. Has higher variance than systematic resampling.
+#[derive(Clone, Copy, Debug)]
 pub struct MultinomialResampling;
 
 impl ResamplingStrategy for MultinomialResampling {
@@ -69,6 +74,7 @@ impl ResamplingStrategy for MultinomialResampling {
 ///
 /// Similar to systematic resampling but uses independent random numbers
 /// for each stratum, providing a middle ground between systematic and multinomial.
+#[derive(Clone, Copy, Debug)]
 pub struct StratifiedResampling;
 
 impl ResamplingStrategy for StratifiedResampling {
@@ -78,8 +84,21 @@ impl ResamplingStrategy for StratifiedResampling {
 }
 
 /// Enum for dynamic dispatch over resampling strategies
+#[derive(Clone, Copy, Debug)]
 pub enum ResamplingStrategies {
     Systematic(SystematicResampling),
     Multinomial(MultinomialResampling),
     Stratified(StratifiedResampling),
+}
+
+impl ResamplingStrategies {
+    pub fn from_str(name: &str) -> PyResult<Self> {
+        match name.to_lowercase().as_str() {
+            "systematic" => Ok(ResamplingStrategies::Systematic(SystematicResampling)),
+            _ => Err(PyValueError::new_err(format!(
+                "Unknown resampling strategy: '{}'",
+                name
+            ))),
+        }
+    }
 }

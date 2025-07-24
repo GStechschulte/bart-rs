@@ -173,6 +173,7 @@ class PGBART(ArrayStepShared):
             split_prior=splitting_probs,
             split_rules_py=self.bart.split_rules,
             response_rule=self.bart.response,
+            resampling_rule="systematic",
             batch_size=batch
         )
 
@@ -198,9 +199,9 @@ class PGBART(ArrayStepShared):
     #     # Record time to quantify performance improvements
         t0 = perf_counter()
     #     self.compiled_pymc_model.update_shared_arrays()
-    #     # step(self.state, self.tune)
     #     sum_trees, variable_inclusion = step(self.state, self.tune)
-        sum_trees = self.pg_bart.step()
+        # sum_trees = self.pg_bart.step()
+        sum_trees = np.zeros(self.bart.y.len())
         t1 = perf_counter()
 
         print((t1 - t0) * 1e6)
@@ -211,8 +212,7 @@ class PGBART(ArrayStepShared):
             "time": t1 - t0,
         }
 
-        # return sum_trees, [stats]
-        return sum_trees
+        return sum_trees, [stats]
 
 
     @staticmethod

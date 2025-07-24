@@ -1,25 +1,28 @@
-use std::{collections::HashMap, ffi::c_void};
+use std::collections::HashMap;
+use std::ffi::c_double;
 
 pub mod base;
-pub mod forest;
+pub mod builder;
+pub mod particle;
 pub mod resampling;
 pub mod response;
 pub mod sampler;
 pub mod split_rules;
+pub mod update;
 
-use crate::base::PgBartState;
-use crate::forest::Grow;
-use crate::resampling::SystematicResampling;
-use crate::response::GaussianResponseStrategy;
-use crate::sampler::{LogpFn, PgBartSampler};
+use crate::builder::{BartSampler, BartSamplerBuilder};
 use crate::split_rules::SplitRules;
+use crate::update::BARTContext;
 
 use numpy::{
     ndarray::{Array1, Ix1, Ix2},
     PyArray1, PyReadonlyArray,
 };
 use pyo3::prelude::*;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
+
+pub type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
 #[pyclass]
 #[derive(Clone)] // Clone is useful for passing settings around
@@ -35,6 +38,7 @@ pub struct PyBartSettings {
     /// Key-value pair indicating the split rule for each dimension of the design matrix.
     split_rules: HashMap<usize, SplitRules>,
     response_rule: String,
+    resampling_rule: String,
     batch_size: (f64, f64),
 }
 
@@ -52,6 +56,7 @@ impl PyBartSettings {
         split_prior: Vec<f64>,
         split_rules_py: HashMap<usize, String>,
         response_rule: String,
+        resampling_rule: String,
         batch_size: (f64, f64),
     ) -> PyResult<Self> {
         let mut split_rules = HashMap::new();
@@ -71,132 +76,66 @@ impl PyBartSettings {
             split_prior,
             split_rules,
             response_rule,
+            resampling_rule,
             batch_size,
         })
     }
 }
 
-#[pyclass]
+#[pyclass(unsendable)]
 struct PySampler {
-    sampler: Sampler,
-    state: PgBartState,
+    sampler: BartSampler,
+    context: BARTContext,
 }
 
 #[pymethods]
 impl PySampler {
     #[staticmethod]
-    #[pyo3(text_signature = "(x, y, settings)")]
     fn init(
         x: PyReadonlyArray<f64, Ix2>,
         y: PyReadonlyArray<f64, Ix1>,
         model: usize,
         settings: PyBartSettings,
     ) -> PyResult<PySampler> {
-        // to_owned_array performs a deep copy of the underlyng data
-        let logp: LogpFn = unsafe { std::mem::transmute(model as *const c_void) };
-
         let data = x.as_array().to_owned();
         let targets = y.as_array().to_owned();
 
-        let forest = vec![0.0; settings.n_trees];
-        let weights = vec![0.0; settings.n_trees];
-        let predictions = Array1::from_elem(targets.len(), targets.mean().unwrap());
+        let sampler = BartSamplerBuilder::new()
+            // .max_nodes = settings.max_nodes;
+            // .n_particles = settings.n_particles;
+            // .init_leaf_value = settings.init_leaf_value;
+            // ... set other fields
+            .build(&targets)?;
 
-        let resample_step = SystematicResampling;
-        let state = PgBartState::new(forest, weights, predictions);
-
-        // Create the sampler based on max_depth and response strategy
-        let sampler = match (settings.max_depth, settings.response_rule.as_str()) {
-            (1..=4, "gaussian") => {
-                let response_strategy = GaussianResponseStrategy;
-                let update_step = Grow {
-                    split_strategy: settings.split_rules.clone(),
-                    response_strategy,
-                };
-                Sampler::Depth5Gaussian(PgBartSampler::new(
-                    data,
-                    targets,
-                    update_step,
-                    resample_step,
-                    logp,
-                    settings,
-                ))
-            }
-            (6..=9, "gaussian") => {
-                let response_strategy = GaussianResponseStrategy;
-                let update_step = Grow {
-                    split_strategy: settings.split_rules.clone(),
-                    response_strategy,
-                };
-                Sampler::Depth10Gaussian(PgBartSampler::new(
-                    data,
-                    targets,
-                    update_step,
-                    resample_step,
-                    logp,
-                    settings,
-                ))
-            }
-            (11..=14, "gaussian") => {
-                let response_strategy = GaussianResponseStrategy;
-                let update_step = Grow {
-                    split_strategy: settings.split_rules.clone(),
-                    response_strategy,
-                };
-                Sampler::Depth15Gaussian(PgBartSampler::new(
-                    data,
-                    targets,
-                    update_step,
-                    resample_step,
-                    logp,
-                    settings,
-                ))
-            }
-            _ => {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                    "Unsupported combination: max_depth={}, response_rule='{}'",
-                    settings.max_depth, settings.response_rule
-                )))
-            }
+        let context = BARTContext {
+            x_data: data.outer_iter().map(|row| row.to_vec()).collect(),
+            y_residuals: targets.to_vec(),
+            alpha: settings.alpha,
+            beta: settings.beta,
+            sigma: 1.0,
+            min_samples_leaf: 1,
+            max_depth: settings.max_depth,
         };
 
-        Ok(PySampler { sampler, state })
+        Ok(PySampler { sampler, context })
     }
 
-    /// Runs the Particle Gibbs sampler sequentially for `M` iterations where `M` is the number
-    /// of trees.
-    ///
-    /// A single step will initialize a set of particles `N`, of which one will replace the `m'th` tree. To decide
-    /// which particle will replace the current tree, the `N` particles are grown until the probability of a
-    /// leaf node expanding is less than a random value in the interval [0, 1].
-    ///
-    /// The grown particles are resampled according to their log-likelihood, of which
-    /// one is selected to replace the `m'th` tree.
-    /// Runs the Particle Gibbs sampler sequentially.
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        // TODO
         let seed = 42;
         let mut rng = SmallRng::seed_from_u64(seed);
-        let sum_trees = self.sampler.step(&mut rng, &mut self.state);
-        Ok(PyArray1::from_vec(py, sum_trees)) // Zero-copy
+        let weights = self.sampler.step(&mut rng, &self.context);
+        Ok(PyArray1::from_vec(py, weights))
     }
-}
 
-pub enum Sampler {
-    // Gaussian response strategies with different depths
-    Depth5Gaussian(PgBartSampler<5, Grow<GaussianResponseStrategy>, SystematicResampling>),
-    Depth10Gaussian(PgBartSampler<10, Grow<GaussianResponseStrategy>, SystematicResampling>),
-    Depth15Gaussian(PgBartSampler<15, Grow<GaussianResponseStrategy>, SystematicResampling>),
-}
-
-impl Sampler {
-    /// Dispatch the step method to the appropriate concrete sampler type
-    pub fn step(&mut self, rng: &mut SmallRng, state: &mut PgBartState) -> Vec<f64> {
-        match self {
-            Sampler::Depth5Gaussian(sampler) => sampler.step(rng, state),
-            Sampler::Depth10Gaussian(sampler) => sampler.step(rng, state),
-            Sampler::Depth15Gaussian(sampler) => sampler.step(rng, state),
-        }
+    fn run<'py>(
+        &mut self,
+        py: Python<'py>,
+        n_iterations: usize,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let seed = 42;
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let weights = self.sampler.run(&mut rng, &self.context, n_iterations);
+        Ok(PyArray1::from_vec(py, weights))
     }
 }
 

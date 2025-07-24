@@ -9,7 +9,7 @@ use pyo3::PyResult;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Normal};
 
-use crate::forest::LeafValue;
+use crate::particle::LeafVal;
 
 /// Response method interface for computing leaf (terminal) node values using
 /// various methods such as MOTR-BART, TVP-BART, and GP-BART.
@@ -20,7 +20,7 @@ pub trait ResponseStrategy {
         y: &Array1<f64>,
         data_indices: &[usize],
         rng: &mut SmallRng,
-    ) -> LeafValue;
+    ) -> LeafVal;
 
     /// Update internal state if needed (for stateful strategies)
     fn update_state(&mut self, _y: &Array1<f64>, _predictions: &Array1<f64>) {}
@@ -39,7 +39,7 @@ impl ResponseStrategy for MotrStrategy {
         y: &Array1<f64>,
         data_indices: &[usize],
         rng: &mut SmallRng,
-    ) -> LeafValue {
+    ) -> LeafVal {
         todo!("Not implemented")
     }
 }
@@ -60,7 +60,7 @@ impl ResponseStrategy for GaussianResponseStrategy {
         y: &Array1<f64>,
         data_indices: &[usize],
         rng: &mut SmallRng,
-    ) -> LeafValue {
+    ) -> LeafVal {
         if data_indices.is_empty() {
             // If no data points, sample from N(0, variance)
             let dist = Normal::new(0.0, 1.0).unwrap();
@@ -101,7 +101,7 @@ impl ResponseStrategies {
         y: &Array1<f64>,
         data_indices: &[usize],
         rng: &mut SmallRng,
-    ) -> LeafValue {
+    ) -> LeafVal {
         match self {
             ResponseStrategies::Motr(strategy) => strategy.sample_leaf_value(y, data_indices, rng),
             ResponseStrategies::Gaussian(strategy) => {
