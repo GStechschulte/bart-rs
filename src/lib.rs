@@ -7,11 +7,11 @@ pub mod particle;
 pub mod resampling;
 pub mod response;
 pub mod sampler;
-pub mod split_rules;
+pub mod splitting;
 pub mod update;
 
 use crate::builder::{BartSampler, BartSamplerBuilder};
-use crate::split_rules::SplitRules;
+use crate::splitting::SplitRules;
 use crate::update::BARTContext;
 
 use numpy::{
