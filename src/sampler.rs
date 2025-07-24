@@ -95,7 +95,7 @@ impl<const MAX_DEPTH: usize, U: Update<MAX_DEPTH>, R: ResamplingStrategy>
             forest
                 .trees
                 .iter_mut()
-                .for_each(|tree| self.update.update(rng, tree));
+                .for_each(|tree| self.update_fn.update(rng, tree));
 
             // Normalize weights
             let weights = forest.weights();

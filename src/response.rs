@@ -51,6 +51,9 @@ impl ResponseStrategy for MotrStrategy {
 #[derive(Clone, Copy, Debug)]
 pub struct GaussianResponseStrategy;
 
+/// Type alias for backward compatibility with benchmarks
+pub type MeanResponse = GaussianResponseStrategy;
+
 impl ResponseStrategy for GaussianResponseStrategy {
     fn sample_leaf_value(
         &self,

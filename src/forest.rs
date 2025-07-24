@@ -84,7 +84,7 @@ pub struct Tree<'arena, const MAX_DEPTH: usize> {
 }
 
 impl<'arena, const MAX_DEPTH: usize> Tree<'arena, MAX_DEPTH> {
-    fn stump(arena: &'arena Bump, init_leaf: LeafValue, n_samples: usize) -> Self {
+    pub fn stump(arena: &'arena Bump, init_leaf: LeafValue, n_samples: usize) -> Self {
         let max_leaf_nodes = 1 << MAX_DEPTH; // 2^(depth)
         let max_internal_nodes = max_leaf_nodes - 1;
 
