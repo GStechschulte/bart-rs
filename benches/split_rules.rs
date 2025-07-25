@@ -83,7 +83,7 @@ fn benchmark_continuous_split_sampling(c: &mut Criterion) {
 /// Benchmark categorical split value sampling
 fn benchmark_categorical_split_sampling(c: &mut Criterion) {
     let mut group = c.benchmark_group("categorical_split_sampling");
-    let mut rng = SmallRng::seed_from_u64(42);
+    let rng = SmallRng::seed_from_u64(42);
     let splitter = OneHotSplit;
 
     let test_cases = vec![
@@ -379,7 +379,7 @@ fn benchmark_split_memory_patterns(c: &mut Criterion) {
 /// Benchmark edge cases in split rules
 fn benchmark_split_edge_cases(c: &mut Criterion) {
     let mut group = c.benchmark_group("split_edge_cases");
-    let mut rng = SmallRng::seed_from_u64(42);
+    let rng = SmallRng::seed_from_u64(42);
 
     // Test with very few candidates
     let few_candidates = vec![1.0, 2.0];

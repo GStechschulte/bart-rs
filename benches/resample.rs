@@ -62,7 +62,7 @@ fn benchmark_systematic_resample(c: &mut Criterion) {
 
 fn benchmark_systematic_resample_uniform_weights(c: &mut Criterion) {
     let mut group = c.benchmark_group("systematic_resample_uniform");
-    let mut rng = SmallRng::seed_from_u64(42);
+    let rng = SmallRng::seed_from_u64(42);
 
     let sizes = vec![10, 20, 50, 100, 200, 500, 1000];
 
@@ -169,7 +169,7 @@ fn benchmark_weight_normalization(c: &mut Criterion) {
 
 fn benchmark_resampling_memory_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("resampling_memory_patterns");
-    let mut rng = SmallRng::seed_from_u64(42);
+    let rng = SmallRng::seed_from_u64(42);
 
     let particle_counts = vec![10, 50, 100, 500, 1000];
 
