@@ -75,10 +75,21 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         max_depth.saturating_sub(1)
     }
 
-    /// Tree traversal to obtain which samples belong (land in) this node.
-    pub fn get_node_samples(&self, node_idx: usize, x_data: &Array<f64, Ix2>) -> Vec<usize> {
-        // TODO!!!
-        (0..x_data.len()).collect()
+    /// Get data (samples) indices for a leaf node.
+    pub fn get_leaf_samples(&self, leaf_idx: usize) -> Vec<usize> {
+        debug_assert!(self.is_leaf(leaf_idx), "Node {} is not a leaf", leaf_idx);
+
+        self.leaf_indices
+            .iter()
+            .enumerate()
+            .filter_map(|(sample_idx, &assigned_leaf)| {
+                if assigned_leaf == leaf_idx {
+                    Some(sample_idx)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Splits (converts) a leaf node into an internal node and adds two new children leaf nodes.
@@ -116,6 +127,41 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         self.leaf_val.push(right_val);
 
         self.size = self.size.max(right_child + 1);
+
+        // Update leaf assignments
+        // self.update_leaf_assignments(leaf_idx, split_var, split_val, left_child, right_child);
+    }
+
+    /// Updates leaf assignments with context after a split
+    ///
+    /// Updating of a Tree's `leaf_indices` occurs after a mutation (converting a leaf node to
+    /// and internal node) as the samples that belonged (fell in) to the parent leaf get
+    /// distributed to the two new child leaves.
+    pub fn update_leaf_assignments(
+        &mut self,
+        split_node_idx: usize,
+        split_var: usize,
+        split_val: f64,
+        affected_samples: &[usize],
+        x_data: &Array<f64, Ix2>,
+    ) {
+        let base_child = 2 * split_node_idx + 1; // Left child
+
+        // Update assignments for samples that were in the split node using
+        // bit manipulation
+        for &sample_idx in affected_samples {
+            let sample_val = x_data[[sample_idx, split_var]];
+            let child_offset = (sample_val >= split_val) as usize;
+            self.leaf_indices[sample_idx] = base_child + child_offset;
+
+            // NOTE: Can remove
+            // Assign to left or right child based on split value
+            // self.leaf_indices[sample_idx] = if sample_val < split_val {
+            // left_child
+            // } else {
+            // right_child
+            // };
+        }
     }
 
     pub fn predict(&self, x: &[Vec<f64>]) -> Vec<f64> {

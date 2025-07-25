@@ -6,7 +6,7 @@
 use numpy::ndarray::Array1;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
-use rand::{rngs::SmallRng, Rng};
+use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
 use crate::particle::LeafVal;

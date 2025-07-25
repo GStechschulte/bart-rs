@@ -1,11 +1,11 @@
 use std::{f64, rc::Rc};
 
 use numpy::ndarray::{Array, Array1, Ix2};
-use rand::{Rng, SeedableRng};
+use rand::Rng;
 
 use crate::{particle::Particle, response::ResponseStrategy, splitting::SplitRules};
 
-/// Represents the decision outcome for mutation proposals
+/// Represents the decision outcome for update proposals
 #[derive(Clone, Debug)]
 pub enum MutationDecision {
     /// Mutation should proceed with the given proposal
@@ -40,7 +40,6 @@ pub struct TreeContext {
     pub splitting_probs: Option<Array1<f64>>,
 }
 
-/// Optimized TreeUpdater using Vec for O(1) feature access instead of HashMap
 #[derive(Clone, Debug)]
 pub struct TreeUpdater<R> {
     /// Split strategies per feature (index = feature_idx)
@@ -145,16 +144,29 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
         &self,
         tree: &mut Particle<MAX_NODES>,
         proposal: &Self::Proposal,
-        _context: &Self::Context,
+        context: &Self::Context,
     ) {
         // Conditional clone using Rc::make_mut
         let tree_mut = Rc::make_mut(tree);
+
+        // Get samples that belong to the node being split before the split happens
+        let node_samples = tree_mut.get_leaf_samples(proposal.node_idx);
+
         tree_mut.split_node(
             proposal.node_idx,
             proposal.split_var,
             proposal.split_val,
             proposal.left_value,
             proposal.right_value,
+        );
+
+        // Update leaf assignments for the affected samples
+        tree_mut.update_leaf_assignments(
+            proposal.node_idx,
+            proposal.split_var,
+            proposal.split_val,
+            &node_samples,
+            &context.x_data,
         );
     }
 }
@@ -176,7 +188,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         };
 
         // Get data indices for this node
-        let node_samples = tree.get_node_samples(node_idx, &context.x_data);
+        let node_samples = tree.get_leaf_samples(node_idx);
         if node_samples.is_empty() {
             return None;
         }
@@ -203,7 +215,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         split_val: f64,
         context: &TreeContext,
     ) -> bool {
-        let node_samples = tree.get_node_samples(node_idx, &context.x_data);
+        let node_samples = tree.get_leaf_samples(node_idx);
 
         if node_samples.len() < context.min_samples_leaf * 2 {
             return false;
@@ -228,7 +240,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         split_val: f64,
         context: &TreeContext,
     ) -> (f64, f64) {
-        let node_samples = tree.get_node_samples(node_idx, &context.x_data);
+        let node_samples = tree.get_leaf_samples(node_idx);
 
         // Split the data to get left and right child samples
         let split_strategy = &self.split_strategies[split_var];

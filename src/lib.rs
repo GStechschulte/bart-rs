@@ -100,6 +100,8 @@ impl PySampler {
         let x_data = x.as_array().to_owned();
         let y_data = y.as_array().to_owned();
 
+        let logp_func: LogpFunc = unsafe { std::mem::transmute(model as *const ()) };
+
         let sampler = BartSamplerBuilder::new()
             // .max_nodes = settings.max_nodes;
             // .n_particles = settings.n_particles;
