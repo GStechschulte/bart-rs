@@ -75,7 +75,9 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         max_depth.saturating_sub(1)
     }
 
+    /// Tree traversal to obtain which samples belong (land in) this node.
     pub fn get_node_samples(&self, node_idx: usize, x_data: &Array<f64, Ix2>) -> Vec<usize> {
+        // TODO!!!
         (0..x_data.len()).collect()
     }
 

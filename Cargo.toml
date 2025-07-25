@@ -43,7 +43,7 @@ debug = true
 codegen-units = 1
 lto = true
 opt-level = 3
-target-cpu = "native"
+# target-cpu = "native"
 
 [profile.bench]
 debug = true

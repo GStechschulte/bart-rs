@@ -12,7 +12,7 @@ pub mod update;
 
 use crate::builder::{BartSampler, BartSamplerBuilder};
 use crate::splitting::SplitRules;
-use crate::update::BARTContext;
+use crate::update::TreeContext;
 
 use numpy::{
     ndarray::{Ix1, Ix2},
@@ -85,7 +85,7 @@ impl PyBartSettings {
 #[pyclass(unsendable)]
 struct PySampler {
     sampler: BartSampler,
-    context: BARTContext,
+    context: TreeContext,
 }
 
 #[pymethods]
@@ -97,21 +97,23 @@ impl PySampler {
         model: usize,
         settings: PyBartSettings,
     ) -> PyResult<PySampler> {
-        let data = x.as_array().to_owned();
-        let targets = y.as_array().to_owned();
+        let x_data = x.as_array().to_owned();
+        let y_data = y.as_array().to_owned();
 
         let sampler = BartSamplerBuilder::new()
             // .max_nodes = settings.max_nodes;
             // .n_particles = settings.n_particles;
             // .init_leaf_value = settings.init_leaf_value;
             // ... set other fields
-            .build(&targets)?;
+            .build(&x_data, &y_data)?;
 
-        let context = BARTContext {
-            x_data: data,
+        let context = TreeContext {
+            x_data: x_data,
+            y_data: y_data,
             alpha: settings.alpha,
             beta: settings.beta,
             sigma: 1.0,
+            splitting_probs: Some(settings.split_prior.into()),
             min_samples_leaf: 1,
             max_depth: settings.max_depth,
         };
@@ -123,17 +125,6 @@ impl PySampler {
         let seed = 42;
         let mut rng = SmallRng::seed_from_u64(seed);
         let weights = self.sampler.step(&mut rng, &self.context);
-        Ok(PyArray1::from_vec(py, weights))
-    }
-
-    fn run<'py>(
-        &mut self,
-        py: Python<'py>,
-        n_iterations: usize,
-    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let seed = 42;
-        let mut rng = SmallRng::seed_from_u64(seed);
-        let weights = self.sampler.run(&mut rng, &self.context, n_iterations);
         Ok(PyArray1::from_vec(py, weights))
     }
 }

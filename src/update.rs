@@ -1,22 +1,25 @@
 use std::{f64, rc::Rc};
 
-use numpy::ndarray::{Array, Ix2};
-use rand::Rng;
+use numpy::ndarray::{Array, Array1, Ix2};
+use rand::{Rng, SeedableRng};
 
-use crate::particle::Particle;
+use crate::{particle::Particle, response::ResponseStrategy, splitting::SplitRules};
 
 /// Represents the decision outcome for mutation proposals
 #[derive(Clone, Debug)]
 pub enum MutationDecision {
     /// Mutation should proceed with the given proposal
-    Accept(BARTProposal),
+    Accept(TreeProposal),
     /// Mutation should be rejected - no clone needed
     Reject,
 }
 
 /// BART Tree proposal types. Currently, only growth proposals are supported.
+///
+/// **NOTE**: If more proposal variants are added in the future, a proposal
+/// enum should be introduced.
 #[derive(Clone, Debug)]
-pub struct BARTProposal {
+pub struct TreeProposal {
     pub node_idx: usize,
     pub split_var: usize,
     pub split_val: f64,
@@ -24,26 +27,56 @@ pub struct BARTProposal {
     pub right_value: f64,
 }
 
-/// Enhanced BARTContext with additional constraints
+/// Contains relevant parameters needed for SMC update steps.
 #[derive(Clone, Debug)]
-pub struct BARTContext {
+pub struct TreeContext {
     pub x_data: Array<f64, Ix2>,
+    pub y_data: Array1<f64>,
     pub alpha: f64,
     pub beta: f64,
     pub sigma: f64,
     pub min_samples_leaf: usize,
     pub max_depth: usize,
+    pub splitting_probs: Option<Array1<f64>>,
 }
 
+/// Optimized TreeUpdater using Vec for O(1) feature access instead of HashMap
 #[derive(Clone, Debug)]
-pub struct Moves;
+pub struct TreeUpdater<R> {
+    /// Split strategies per feature (index = feature_idx)
+    split_strategies: Vec<SplitRules>,
+    /// Response strategy for leaf value generation
+    response_strategy: R,
+}
+
+impl<R: ResponseStrategy> TreeUpdater<R> {
+    /// Create a new TreeUpdater with strategies for each feature
+    pub fn new(split_strategies: Vec<SplitRules>, response_strategy: R) -> Self {
+        Self {
+            split_strategies,
+            response_strategy,
+        }
+    }
+
+    /// Create TreeUpdater with the same split strategy for all features
+    pub fn with_uniform_split_strategy(
+        n_features: usize,
+        split_strategy: SplitRules,
+        response_strategy: R,
+    ) -> Self {
+        Self {
+            split_strategies: vec![split_strategy; n_features],
+            response_strategy,
+        }
+    }
+}
 
 pub trait Update<const MAX_NODES: usize> {
     type Proposal;
     type Context;
 
-    /// Evaluate mutation feasibility without expensive operations
-    fn should_mutate(
+    /// Evaluate mutation feasibility for a node of the given particle.
+    fn should_update(
         &self,
         rng: &mut impl Rng,
         particle: &Particle<MAX_NODES>,
@@ -51,8 +84,8 @@ pub trait Update<const MAX_NODES: usize> {
         context: &Self::Context,
     ) -> MutationDecision;
 
-    /// Execute mutation only when decision is Accept
-    fn apply_mutation(
+    /// Apply a mutation proposal to a particle.
+    fn apply_update(
         &self,
         particle: &mut Particle<MAX_NODES>,
         proposal: &Self::Proposal,
@@ -67,56 +100,39 @@ pub trait Weight<const MAX_NODES: usize> {
     fn log_weight(&self, particle: &Particle<MAX_NODES>, context: &Self::Context) -> f64;
 }
 
-impl<const MAX_NODES: usize> Update<MAX_NODES> for Moves {
-    type Proposal = BARTProposal;
-    type Context = BARTContext;
+impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpdater<R> {
+    type Proposal = TreeProposal;
+    type Context = TreeContext;
 
     /// Validate mutation feasibility before applying the mutation (update).
-    fn should_mutate(
+    fn should_update(
         &self,
         rng: &mut impl Rng,
         tree: &Particle<MAX_NODES>,
         node_idx: usize,
         context: &Self::Context,
     ) -> MutationDecision {
-        // let available_leaves = tree.get_leaf_indices();
-        // println!(
-        //     "available_leaves: {:?}, empty?: {}",
-        //     available_leaves,
-        //     available_leaves.is_empty()
-        // );
-
-        // if available_leaves.is_empty() {
-        //     println!("Rejecting mutation...available_leaves is empty");
-        //     return MutationDecision::Reject;
-        // }
-
-        // let node_idx = self.select_leaf_node(rng, &available_leaves);
         let depth = tree.get_depth(node_idx);
         let prob_not_expanding = 1.0 - (context.alpha * (1.0 + depth as f64).powf(-context.beta));
 
-        println!(
-            "node_idx: {:?}, depth: {}, probs_not_expanding: {}",
-            node_idx, depth, prob_not_expanding
-        );
-
         if prob_not_expanding > rng.random::<f64>() {
-            println!("Rejecting mutation. Reason: node is probably a leaf node.");
             return MutationDecision::Reject;
         }
 
-        // Generate and validate proposal
-        // let node_idx = self.select_leaf_node(rng, &available_leaves);
-        let (split_var, split_val) = self.propose_split(rng, context);
+        // Generate and validate proposal using integrated strategies
+        let (split_var, split_val) = match self.propose_split(rng, tree, node_idx, context) {
+            Some(split) => split,
+            None => return MutationDecision::Reject,
+        };
 
         if !self.is_valid_split(tree, node_idx, split_var, split_val, context) {
-            println!("Rejecting mutation. Reason: Not a valid split");
             return MutationDecision::Reject;
         }
 
-        let (left_val, right_val) = self.propose_leaf_values(rng, context);
+        let (left_val, right_val) =
+            self.propose_leaf_values(rng, tree, node_idx, split_var, split_val, context);
 
-        MutationDecision::Accept(BARTProposal {
+        MutationDecision::Accept(TreeProposal {
             node_idx,
             split_var,
             split_val,
@@ -125,7 +141,7 @@ impl<const MAX_NODES: usize> Update<MAX_NODES> for Moves {
         })
     }
 
-    fn apply_mutation(
+    fn apply_update(
         &self,
         tree: &mut Particle<MAX_NODES>,
         proposal: &Self::Proposal,
@@ -143,65 +159,108 @@ impl<const MAX_NODES: usize> Update<MAX_NODES> for Moves {
     }
 }
 
-impl Default for Moves {
-    fn default() -> Self {
-        Self::new()
+impl<R: ResponseStrategy> TreeUpdater<R> {
+    /// Propose a split using the integrated split strategies
+    fn propose_split<const MAX_NODES: usize>(
+        &self,
+        rng: &mut impl Rng,
+        tree: &Particle<MAX_NODES>,
+        node_idx: usize,
+        context: &TreeContext,
+    ) -> Option<(usize, f64)> {
+        // Select split variable based on splitting probabilities or uniform
+        let split_var = if let Some(ref probs) = context.splitting_probs {
+            self.sample_feature_from_probs(rng, probs)
+        } else {
+            rng.random_range(0..context.x_data.ncols())
+        };
+
+        // Get data indices for this node
+        let node_samples = tree.get_node_samples(node_idx, &context.x_data);
+        if node_samples.is_empty() {
+            return None;
+        }
+
+        // Extract feature values for samples in this node
+        let feature_values: Vec<f64> = node_samples
+            .iter()
+            .map(|&idx| context.x_data[[idx, split_var]])
+            .collect();
+
+        // Use the appropriate split strategy for this feature
+        let split_strategy = &self.split_strategies[split_var];
+        let split_val = split_strategy.sample_split_value(rng, &feature_values)?;
+
+        Some((split_var, split_val))
     }
-}
 
-impl Moves {
-    pub fn new() -> Self {
-        Self
-    }
-
-    fn propose_split(&self, rng: &mut impl Rng, context: &BARTContext) -> (usize, f64) {
-        // TODO. Select the split_var based on a splitting probability prior probability vector
-        // from the context structure
-        //
-        // let p = rng.random::<f64>();
-        // let splitting_probs = context.splitting_probability;
-        let n_vars = context.x_data.ncols();
-        let split_var = rng.random_range(0..n_vars);
-
-        // TODO: The split value should be determined from the context.x_data when partitioned by the
-        // leaf_indices values, i.e., these are the data samples that fall into this node_idx (leaf node).
-        let min = context.x_data.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        let max = context.x_data.iter().fold(-f64::INFINITY, |a, &b| a.max(b));
-
-        let split_val = rng.random_range(min..max);
-
-        (split_var, split_val)
-    }
-
+    /// Validate split using the integrated split strategies
     fn is_valid_split<const MAX_NODES: usize>(
         &self,
         tree: &Particle<MAX_NODES>,
         node_idx: usize,
         split_var: usize,
         split_val: f64,
-        context: &BARTContext,
+        context: &TreeContext,
     ) -> bool {
         let node_samples = tree.get_node_samples(node_idx, &context.x_data);
 
-        // TODO. Should we remove this?
         if node_samples.len() < context.min_samples_leaf * 2 {
             return false;
         }
 
-        let left_count = node_samples
-            .iter()
-            .filter(|&&sample_idx| context.x_data[[sample_idx, split_var]] <= split_val)
-            .count();
+        // Use the split strategy to determine the actual split
+        let split_strategy = &self.split_strategies[split_var];
+        let (left_indices, right_indices) =
+            split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
 
-        let right_count = node_samples.len() - left_count;
-
-        left_count >= context.min_samples_leaf && right_count >= context.min_samples_leaf
+        left_indices.len() >= context.min_samples_leaf
+            && right_indices.len() >= context.min_samples_leaf
     }
 
-    fn propose_leaf_values(&self, rng: &mut impl Rng, _context: &BARTContext) -> (f64, f64) {
-        // TODO. Proposed leaf values should be computed using the response strategy.
-        let leaves: (f64, f64) = rng.random();
-        leaves
+    /// Propose leaf values using the integrated response strategy
+    fn propose_leaf_values<const MAX_NODES: usize>(
+        &self,
+        rng: &mut impl Rng,
+        tree: &Particle<MAX_NODES>,
+        node_idx: usize,
+        split_var: usize,
+        split_val: f64,
+        context: &TreeContext,
+    ) -> (f64, f64) {
+        let node_samples = tree.get_node_samples(node_idx, &context.x_data);
+
+        // Split the data to get left and right child samples
+        let split_strategy = &self.split_strategies[split_var];
+        let (left_indices, right_indices) =
+            split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
+
+        // Sample leaf values using the response strategy
+        let left_value =
+            self.response_strategy
+                .sample_leaf_value(&context.y_data, &left_indices, rng);
+
+        let right_value =
+            self.response_strategy
+                .sample_leaf_value(&context.y_data, &right_indices, rng);
+
+        (left_value, right_value)
+    }
+
+    /// Sample feature index based on probability weights
+    fn sample_feature_from_probs(&self, rng: &mut impl Rng, probs: &Array1<f64>) -> usize {
+        let total: f64 = probs.sum();
+        let mut target = rng.random::<f64>() * total;
+
+        for (idx, &prob) in probs.iter().enumerate() {
+            target -= prob;
+            if target <= 0.0 {
+                return idx;
+            }
+        }
+
+        // Fallback to last index
+        probs.len() - 1
     }
 }
 
@@ -209,7 +268,7 @@ impl Moves {
 pub struct BARTWeighter;
 
 impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
-    type Context = BARTContext;
+    type Context = TreeContext;
 
     fn log_weight(&self, tree: &Particle<MAX_NODES>, context: &Self::Context) -> f64 {
         self.compute_log_likelihood(tree, context)
@@ -219,11 +278,11 @@ impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
 impl BARTWeighter {
     fn compute_log_likelihood<const MAX_NODES: usize>(
         &self,
-        tree: &Particle<MAX_NODES>,
-        context: &BARTContext,
+        _tree: &Particle<MAX_NODES>,
+        _context: &TreeContext,
     ) -> f64 {
-        // TODO. The log-likelihood should computed by passing the Tree's predictions
-        // to the LogpFunc callback
+        // TODO: Implement actual log-likelihood computation
+        // This should compute the likelihood of the data given the tree predictions
         let mut rng = rand::rng();
         rng.random()
     }

@@ -5,7 +5,7 @@ use rand::Rng;
 use crate::base::BartState;
 use crate::particle::Particle;
 use crate::resampling::ResamplingStrategy;
-use crate::update::{BARTProposal, MutationDecision, Update, Weight};
+use crate::update::{MutationDecision, TreeProposal, Update, Weight};
 
 pub struct ParticleGibbsSampler<const MAX_NODES: usize, U, W, R> {
     update: U,
@@ -15,7 +15,7 @@ pub struct ParticleGibbsSampler<const MAX_NODES: usize, U, W, R> {
 
 impl<const MAX_NODES: usize, U, W, R> ParticleGibbsSampler<MAX_NODES, U, W, R>
 where
-    U: Update<MAX_NODES, Proposal = BARTProposal>,
+    U: Update<MAX_NODES, Proposal = TreeProposal>,
     W: Weight<MAX_NODES, Context = U::Context>,
     R: ResamplingStrategy,
 {
@@ -33,6 +33,7 @@ where
         state: BartState<MAX_NODES>,
         context: &U::Context,
     ) -> BartState<MAX_NODES> {
+        let start = std::time::Instant::now();
         let mut particles = state.particles;
 
         let estimated_max_queue_size = (MAX_NODES / 4).max(16);
@@ -60,7 +61,7 @@ where
                                    Rc::strong_count(particle)
                                );
 
-                               match self.update.should_mutate(rng, particle, node_idx, context) {
+                               match self.update.should_update(rng, particle, node_idx, context) {
                                    MutationDecision::Accept(proposal) => {
                                        println!(
                                            "    ✅ Particle {}: Mutation ACCEPTED for node {} -> split_var: {}, split_val: {:.3}",
@@ -68,7 +69,7 @@ where
                                        );
 
                                        // Apply mutation
-                                       self.update.apply_mutation(particle, &proposal, context);
+                                       self.update.apply_update(particle, &proposal, context);
 
                                        // Add children to queue
                                        let left_child = 2 * node_idx + 1;
@@ -128,9 +129,12 @@ where
             .map(|idx| Rc::clone(&particles[idx]))
             .collect();
 
+        let duration = start.elapsed();
+        println!("Rust finished stepping in {:?}", duration);
+
         BartState {
             particles: resampled_particles,
-            weights,
+            weights: weights,
         }
     }
 
@@ -210,7 +214,6 @@ where
     }
 }
 
-/// Weight normalization via the log-sum-exp trick.
 pub fn normalize_weights(weights: &[f64]) -> impl Iterator<Item = f64> + '_ {
     // TODO: Do we have to clone here?
     let max_log_weight = weights.iter().cloned().fold(f64::NEG_INFINITY, f64::max);

@@ -6,7 +6,7 @@
 use numpy::ndarray::Array1;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
-use rand::rngs::SmallRng;
+use rand::{rngs::SmallRng, Rng};
 use rand_distr::{Distribution, Normal};
 
 use crate::particle::LeafVal;
@@ -19,7 +19,7 @@ pub trait ResponseStrategy {
         &self,
         y: &Array1<f64>,
         data_indices: &[usize],
-        rng: &mut SmallRng,
+        rng: &mut impl Rng,
     ) -> LeafVal;
 
     /// Update internal state if needed (for stateful strategies)
@@ -38,7 +38,7 @@ impl ResponseStrategy for MotrStrategy {
         &self,
         y: &Array1<f64>,
         data_indices: &[usize],
-        rng: &mut SmallRng,
+        rng: &mut impl Rng,
     ) -> LeafVal {
         todo!("Not implemented")
     }
@@ -59,7 +59,7 @@ impl ResponseStrategy for GaussianResponseStrategy {
         &self,
         y: &Array1<f64>,
         data_indices: &[usize],
-        rng: &mut SmallRng,
+        rng: &mut impl Rng,
     ) -> LeafVal {
         if data_indices.is_empty() {
             // If no data points, sample from N(0, variance)
@@ -100,7 +100,7 @@ impl ResponseStrategies {
         &self,
         y: &Array1<f64>,
         data_indices: &[usize],
-        rng: &mut SmallRng,
+        rng: &mut impl Rng,
     ) -> LeafVal {
         match self {
             ResponseStrategies::Motr(strategy) => strategy.sample_leaf_value(y, data_indices, rng),

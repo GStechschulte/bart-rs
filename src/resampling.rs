@@ -66,21 +66,18 @@ impl ResamplingStrategy for SystematicResampling {
         let n = weights_vec.len();
         let u = rng.random::<f64>(); // Random offset
 
-        // Pre-compute cumulative sum
-        let mut cumsum = 0.0;
+        // Stream cumulative sum computation
         let cumsum_vec: Vec<f64> = weights_vec
             .iter()
-            .map(|&w| {
-                cumsum += w;
-                cumsum
+            .scan(0.0, |acc, &w| {
+                *acc += w;
+                Some(*acc)
             })
             .collect();
 
-        // Return iterator that performs systematic resampling
+        // Return streaming iterator for indices
         (0..n).map(move |i| {
             let target = (i as f64 + u) / n as f64;
-
-            // Find the first cumsum value >= target
             cumsum_vec
                 .iter()
                 .position(|&cum| cum >= target)
