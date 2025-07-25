@@ -99,7 +99,7 @@ impl SplitRule for OneHotSplit {
 
         // For categorical variables, randomly select one of the unique values
         // Better approach - avoid double collection
-        let mut unique_vals: Vec<Self::Value> = candidates.iter().copied().collect();
+        let mut unique_vals: Vec<Self::Value> = candidates.to_vec();
         unique_vals.sort_unstable();
         unique_vals.dedup();
 

@@ -143,6 +143,12 @@ impl<const MAX_NODES: usize> Update<MAX_NODES> for Moves {
     }
 }
 
+impl Default for Moves {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Moves {
     pub fn new() -> Self {
         Self
@@ -206,8 +212,7 @@ impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
     type Context = BARTContext;
 
     fn log_weight(&self, tree: &Particle<MAX_NODES>, context: &Self::Context) -> f64 {
-        let log_likelihood = self.compute_log_likelihood(tree, context);
-        log_likelihood
+        self.compute_log_likelihood(tree, context)
     }
 }
 

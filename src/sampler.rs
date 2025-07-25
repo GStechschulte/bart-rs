@@ -238,8 +238,7 @@ struct ParticleQueues {
 impl ParticleQueues {
     fn new(num_particles: usize, max_queue_size: usize) -> Self {
         let total_capacity = num_particles * max_queue_size;
-        let mut buffer = Vec::with_capacity(total_capacity);
-        buffer.resize(total_capacity, 0);
+        let mut buffer = vec![0; total_capacity];
 
         let queue_starts: Vec<usize> = (0..num_particles).map(|i| i * max_queue_size).collect();
 
@@ -308,11 +307,7 @@ impl ParticleQueues {
 
     /// Get the current size of a particle's queue
     fn get_queue_size(&self, particle_idx: usize) -> usize {
-        if self.read_positions[particle_idx] >= self.queue_ends[particle_idx] {
-            0
-        } else {
-            self.queue_ends[particle_idx] - self.read_positions[particle_idx]
-        }
+        self.queue_ends[particle_idx].saturating_sub(self.read_positions[particle_idx])
     }
 
     /// Get debug info for all queues

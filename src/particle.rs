@@ -1,6 +1,6 @@
 use std::{f64, rc::Rc, usize};
 
-use numpy::ndarray::{Array, Ix1, Ix2};
+use numpy::ndarray::{Array, Ix2};
 
 // A Particle is a shared pointer to a tree
 pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
