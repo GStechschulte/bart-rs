@@ -108,8 +108,7 @@ impl PySampler {
             .build(&targets)?;
 
         let context = BARTContext {
-            x_data: data.outer_iter().map(|row| row.to_vec()).collect(),
-            y_residuals: targets.to_vec(),
+            x_data: data,
             alpha: settings.alpha,
             beta: settings.beta,
             sigma: 1.0,

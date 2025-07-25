@@ -55,7 +55,7 @@ impl SplitRule for ContinuousSplit {
         }
 
         // Sample uniformly between min and max
-        Some(rng.gen_range(min_val..max_val))
+        Some(rng.random_range(min_val..max_val))
     }
 
     fn split_data_indices(
@@ -98,14 +98,16 @@ impl SplitRule for OneHotSplit {
         }
 
         // For categorical variables, randomly select one of the unique values
-        let unique_vals: std::collections::HashSet<_> = candidates.iter().copied().collect();
-        let unique_vec: Vec<_> = unique_vals.into_iter().collect();
+        // Better approach - avoid double collection
+        let mut unique_vals: Vec<Self::Value> = candidates.iter().copied().collect();
+        unique_vals.sort_unstable();
+        unique_vals.dedup();
 
-        if unique_vec.len() <= 1 {
+        if unique_vals.len() <= 1 {
             return None;
         }
 
-        Some(unique_vec[rng.gen_range(0..unique_vec.len())])
+        Some(unique_vals[rng.random_range(0..unique_vals.len())])
     }
 
     fn split_data_indices(

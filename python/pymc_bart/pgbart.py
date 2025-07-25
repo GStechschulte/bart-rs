@@ -151,6 +151,8 @@ class PGBART(ArrayStepShared):
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
         max_nodes_per_tree = 2 ** (max_depth + 1) - 1
 
+        print(f"X: {self.X}")
+        print(f"y: {self.bart.Y}")
         print(f"init_leaf_value: {init_leaf_value}")
         print(f"response_rule: {self.bart.response}")
         print(f"alpha vector: {self.alpha_vec}")
@@ -158,8 +160,6 @@ class PGBART(ArrayStepShared):
         print(f"alpha: {self.bart.alpha}, beta: {self.bart.beta}")
         print(f"max_depth: {max_depth}")
         print(f"max_nodes_per_tree: {max_nodes_per_tree}")
-        print(f"self._sum_of_trees_buffer: {self._sum_of_trees_buffer}")
-
 
         # Build the Particle Gibbs sampler
         settings = PyBartSettings(
@@ -200,8 +200,9 @@ class PGBART(ArrayStepShared):
         t0 = perf_counter()
     #     self.compiled_pymc_model.update_shared_arrays()
     #     sum_trees, variable_inclusion = step(self.state, self.tune)
-        # sum_trees = self.pg_bart.step()
-        sum_trees = np.zeros(self.bart.y.len())
+        sum_trees = self.pg_bart.step()
+        print(sum_trees)
+        sum_trees = np.zeros(self.bart.Y.shape[0])
         t1 = perf_counter()
 
         print((t1 - t0) * 1e6)

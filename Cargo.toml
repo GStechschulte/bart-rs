@@ -21,27 +21,6 @@ edition = "2021"
 name = "pymc_bart"
 crate-type = ["cdylib", "rlib"]
 
-[[bench]]
-name = "planting"
-path = "benches/planting.rs"
-harness = false
-
-[[bench]]
-name = "resample"
-path = "benches/resample.rs"
-harness = false
-
-[[bench]]
-name = "comprehensive_particle_benchmark"
-path = "benches/comprehensive_particle_benchmark.rs"
-harness = false
-
-[[bench]]
-name = "memory_analysis_benchmark"
-path = "benches/memory_analysis_benchmark.rs"
-harness = false
-
-
 [dependencies]
 pyo3 = { version = "0.25.1", features = ["macros"] }
 numpy = { version = "0.25.0" }

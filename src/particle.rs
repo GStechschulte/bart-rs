@@ -1,5 +1,7 @@
 use std::{f64, rc::Rc, usize};
 
+use numpy::ndarray::{Array, Ix1, Ix2};
+
 // A Particle is a shared pointer to a tree
 pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
 
@@ -73,7 +75,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         max_depth.saturating_sub(1)
     }
 
-    pub fn get_node_samples(&self, node_idx: usize, x_data: &[Vec<f64>]) -> Vec<usize> {
+    pub fn get_node_samples(&self, node_idx: usize, x_data: &Array<f64, Ix2>) -> Vec<usize> {
         (0..x_data.len()).collect()
     }
 
