@@ -1,16 +1,18 @@
-use crate::particle::Particle;
+use numpy::{ndarray::Array, Ix1};
+
+use crate::particle::Tree;
 
 #[derive(Clone, Debug)]
 pub struct BartState<const MAX_NODES: usize> {
-    pub particles: Vec<Particle<MAX_NODES>>,
-    pub weights: Vec<f64>,
+    pub ensemble_trees: Vec<Tree<MAX_NODES>>,
+    pub ensemble_predictions: Array<f64, Ix1>,
 }
 
 impl<const MAX_NODES: usize> BartState<MAX_NODES> {
-    pub fn new(particles: Vec<Particle<MAX_NODES>>, init_weights: Vec<f64>) -> Self {
+    pub fn new(trees: Vec<Tree<MAX_NODES>>, init_predictions: Array<f64, Ix1>) -> Self {
         Self {
-            particles,
-            weights: init_weights,
+            ensemble_trees: trees,
+            ensemble_predictions: init_predictions,
         }
     }
 }

@@ -2,7 +2,8 @@
 
 use std::rc::Rc;
 
-use numpy::ndarray::{Array1, Array2};
+use numpy::ndarray::{Array, Ix1};
+use numpy::Ix2;
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 use rand::rngs::SmallRng;
@@ -14,6 +15,7 @@ use crate::response::{GaussianResponseStrategy, ResponseStrategies};
 use crate::sampler::ParticleGibbsSampler;
 use crate::splitting::{ContinuousSplit, SplitRules};
 use crate::update::{BARTWeighter, TreeContext, TreeUpdater};
+use crate::LogpFunc;
 
 // Type aliases for different node capacities using concrete ResponseStrategy
 type Sampler127 = ParticleGibbsSampler<
@@ -73,43 +75,40 @@ pub enum BartSampler {
 
 impl BartSampler {
     /// Execute a single sampling step
-    pub fn step(&mut self, rng: &mut SmallRng, context: &TreeContext) -> Vec<f64> {
+    pub fn step(&mut self, rng: &mut SmallRng, context: &TreeContext) -> &Array<f64, Ix1> {
         match self {
             BartSampler::Nodes127 { sampler, state } => {
-                *state = sampler.step(rng, state.clone(), context);
-                state.weights.clone()
+                // Temporarily move state out, transform it, put it back
+                let dummy = BartState::new(Vec::new(), Array::zeros(0));
+                let old_state = std::mem::replace(state, dummy);
+                *state = sampler.step(rng, old_state, context);
+                &state.ensemble_predictions // Return reference - no clone!
             }
             BartSampler::Nodes255 { sampler, state } => {
-                *state = sampler.step(rng, state.clone(), context);
-                state.weights.clone()
+                let dummy = BartState::new(Vec::new(), Array::zeros(0));
+                let old_state = std::mem::replace(state, dummy);
+                *state = sampler.step(rng, old_state, context);
+                &state.ensemble_predictions
             }
             BartSampler::Nodes511 { sampler, state } => {
-                *state = sampler.step(rng, state.clone(), context);
-                state.weights.clone()
+                let dummy = BartState::new(Vec::new(), Array::zeros(0));
+                let old_state = std::mem::replace(state, dummy);
+                *state = sampler.step(rng, old_state, context);
+                &state.ensemble_predictions
             }
             BartSampler::Nodes1023 { sampler, state } => {
-                *state = sampler.step(rng, state.clone(), context);
-                state.weights.clone()
+                let dummy = BartState::new(Vec::new(), Array::zeros(0));
+                let old_state = std::mem::replace(state, dummy);
+                *state = sampler.step(rng, old_state, context);
+                &state.ensemble_predictions
             }
             BartSampler::Nodes2047 { sampler, state } => {
-                *state = sampler.step(rng, state.clone(), context);
-                state.weights.clone()
+                let dummy = BartState::new(Vec::new(), Array::zeros(0));
+                let old_state = std::mem::replace(state, dummy);
+                *state = sampler.step(rng, old_state, context);
+                &state.ensemble_predictions
             }
         }
-    }
-
-    /// Execute multiple sampling steps
-    pub fn run(
-        &mut self,
-        rng: &mut SmallRng,
-        context: &TreeContext,
-        n_iterations: usize,
-    ) -> Vec<f64> {
-        let mut result = Vec::new();
-        for _ in 0..n_iterations {
-            result = self.step(rng, context);
-        }
-        result
     }
 }
 
@@ -118,10 +117,11 @@ impl BartSampler {
 pub struct BartSamplerBuilder {
     pub max_nodes: usize,
     pub n_particles: usize,
+    pub n_trees: usize,
     pub init_leaf_value: f64,
     pub split_strategies: Option<Vec<SplitRules>>,
     pub response_strategy: Option<ResponseStrategies>,
-    pub splitting_probs: Option<Array1<f64>>,
+    pub splitting_probs: Option<Array<f64, Ix1>>,
     pub alpha: f64,
     pub beta: f64,
     pub sigma: f64,
@@ -133,7 +133,8 @@ impl Default for BartSamplerBuilder {
     fn default() -> Self {
         Self {
             max_nodes: 1023,
-            n_particles: 20,
+            n_particles: 10,
+            n_trees: 50,
             init_leaf_value: 0.0,
             split_strategies: None,
             response_strategy: None,
@@ -164,6 +165,11 @@ impl BartSamplerBuilder {
         self
     }
 
+    pub fn with_n_trees(mut self, n_trees: usize) -> Self {
+        self.n_trees = n_trees;
+        self
+    }
+
     /// Set the initial leaf value
     pub fn with_init_leaf_value(mut self, init_leaf_value: f64) -> Self {
         self.init_leaf_value = init_leaf_value;
@@ -186,31 +192,14 @@ impl BartSamplerBuilder {
         self
     }
 
-    /// Set split strategies from string specifications
-    pub fn with_split_strategies_from_strings(mut self, strategy_specs: &[&str]) -> PyResult<Self> {
-        let strategies: Result<Vec<SplitRules>, _> = strategy_specs
-            .iter()
-            .map(|&spec| SplitRules::from_str(spec))
-            .collect();
-
-        self.split_strategies = Some(strategies?);
-        Ok(self)
-    }
-
     /// Set response strategy
     pub fn with_response_strategy(mut self, response_strategy: ResponseStrategies) -> Self {
         self.response_strategy = Some(response_strategy);
         self
     }
 
-    /// Set response strategy from string
-    pub fn with_response_strategy_from_string(mut self, strategy_name: &str) -> PyResult<Self> {
-        self.response_strategy = Some(ResponseStrategies::from_str(strategy_name)?);
-        Ok(self)
-    }
-
     /// Set feature splitting probabilities
-    pub fn with_splitting_probs(mut self, probs: Array1<f64>) -> Self {
+    pub fn with_splitting_probs(mut self, probs: Array<f64, Ix1>) -> Self {
         self.splitting_probs = Some(probs);
         self
     }
@@ -231,7 +220,12 @@ impl BartSamplerBuilder {
     }
 
     /// Build the BART sampler with given data
-    pub fn build(self, x_data: &Array2<f64>, y_data: &Array1<f64>) -> PyResult<BartSampler> {
+    pub fn build(
+        self,
+        x_data: &Array<f64, Ix2>,
+        y_data: &Array<f64, Ix1>,
+        logp_fn: LogpFunc,
+    ) -> PyResult<BartSampler> {
         let n_features = x_data.ncols();
 
         // Use provided split strategies or default to continuous for all features
@@ -255,15 +249,21 @@ impl BartSamplerBuilder {
         // Create the TreeUpdater with the configured strategies
         let tree_updater = TreeUpdater::new(split_strategies, response_strategy);
 
+        // Create the Tree weightor with the callback
+        let tree_weighter = BARTWeighter { logp_func: logp_fn };
+
         // Extract needed fields before consuming self
         let max_nodes = self.max_nodes;
         let n_particles = self.n_particles;
+        let n_trees = self.n_trees;
         let init_leaf_value = self.init_leaf_value;
 
         Self::create_sampler_with_components(
             tree_updater,
+            tree_weighter,
             y_data,
             max_nodes,
+            n_trees,
             n_particles,
             init_leaf_value,
         )
@@ -272,12 +272,19 @@ impl BartSamplerBuilder {
     /// Internal method to create the sampler with the configured updater
     fn create_sampler_with_components(
         tree_updater: TreeUpdater<GaussianResponseStrategy>,
-        y_data: &Array1<f64>,
+        tree_weighter: BARTWeighter,
+        y_data: &Array<f64, Ix1>,
         max_nodes: usize,
+        n_trees: usize,
         n_particles: usize,
         init_leaf_value: f64,
     ) -> PyResult<BartSampler> {
-        let sampler_components = (tree_updater, BARTWeighter, SystematicResampling);
+        let sampler_components = (tree_updater, tree_weighter, SystematicResampling);
+
+        let y_mean = y_data.mean().unwrap_or(0.0);
+        let init_leaf_value_rs = y_mean / n_trees as f64;
+        let init_predictions = Array::from_elem(y_data.len(), y_mean);
+        let n_samples = y_data.len();
 
         match max_nodes {
             127 => {
@@ -286,10 +293,10 @@ impl BartSamplerBuilder {
                     sampler_components.1,
                     sampler_components.2,
                 );
-                let particles: Vec<Particle<127>> = (0..n_particles)
-                    .map(|_| Rc::new(Tree::new(init_leaf_value, y_data.len())))
+                let tree_ensemble: Vec<Tree<127>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
-                let state = BartState::new(particles, vec![1.0; n_particles]);
+                let state = BartState::new(tree_ensemble, init_predictions);
                 Ok(BartSampler::Nodes127 { sampler, state })
             }
             255 => {
@@ -298,10 +305,10 @@ impl BartSamplerBuilder {
                     sampler_components.1,
                     sampler_components.2,
                 );
-                let particles: Vec<Particle<255>> = (0..n_particles)
-                    .map(|_| Rc::new(Tree::new(init_leaf_value, y_data.len())))
+                let tree_ensemble: Vec<Tree<255>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
-                let state = BartState::new(particles, vec![1.0; n_particles]);
+                let state = BartState::new(tree_ensemble, init_predictions);
                 Ok(BartSampler::Nodes255 { sampler, state })
             }
             511 => {
@@ -310,10 +317,10 @@ impl BartSamplerBuilder {
                     sampler_components.1,
                     sampler_components.2,
                 );
-                let particles: Vec<Particle<511>> = (0..n_particles)
-                    .map(|_| Rc::new(Tree::new(init_leaf_value, y_data.len())))
+                let tree_ensemble: Vec<Tree<511>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
-                let state = BartState::new(particles, vec![1.0; n_particles]);
+                let state = BartState::new(tree_ensemble, init_predictions);
                 Ok(BartSampler::Nodes511 { sampler, state })
             }
             1023 => {
@@ -322,10 +329,10 @@ impl BartSamplerBuilder {
                     sampler_components.1,
                     sampler_components.2,
                 );
-                let particles: Vec<Particle<1023>> = (0..n_particles)
-                    .map(|_| Rc::new(Tree::new(init_leaf_value, y_data.len())))
+                let tree_ensemble: Vec<Tree<1023>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
-                let state = BartState::new(particles, vec![1.0; n_particles]);
+                let state = BartState::new(tree_ensemble, init_predictions);
                 Ok(BartSampler::Nodes1023 { sampler, state })
             }
             2047 => {
@@ -334,10 +341,10 @@ impl BartSamplerBuilder {
                     sampler_components.1,
                     sampler_components.2,
                 );
-                let particles: Vec<Particle<2047>> = (0..n_particles)
-                    .map(|_| Rc::new(Tree::new(init_leaf_value, y_data.len())))
+                let tree_ensemble: Vec<Tree<2047>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
-                let state = BartState::new(particles, vec![1.0; n_particles]);
+                let state = BartState::new(tree_ensemble, init_predictions);
                 Ok(BartSampler::Nodes2047 { sampler, state })
             }
             _ => Err(PyValueError::new_err(format!(
@@ -353,26 +360,5 @@ impl BartSamplerBuilder {
     /// Create a builder for regression with continuous features
     pub fn for_regression() -> Self {
         Self::new().with_response_strategy(ResponseStrategies::Gaussian(GaussianResponseStrategy))
-    }
-
-    /// Create a builder for mixed feature types
-    pub fn for_mixed_features(
-        _continuous_features: &[usize],
-        categorical_features: &[usize],
-        n_features: usize,
-    ) -> PyResult<Self> {
-        let mut strategies = vec![SplitRules::Continuous(ContinuousSplit); n_features];
-
-        for &idx in categorical_features {
-            if idx >= n_features {
-                return Err(PyValueError::new_err(format!(
-                    "Categorical feature index {} is out of bounds for {} features",
-                    idx, n_features
-                )));
-            }
-            strategies[idx] = SplitRules::OneHot(crate::splitting::OneHotSplit);
-        }
-
-        Ok(Self::new().with_split_strategies(strategies))
     }
 }

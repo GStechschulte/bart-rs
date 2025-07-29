@@ -170,11 +170,11 @@ class PGBART(ArrayStepShared):
             init_leaf_std=self.leaf_sd,
             n_trees=self.bart.m,
             n_particles=num_particles,
-            max_depth=max_depth,
+            max_nodes=max_nodes_per_tree,
             alpha=self.bart.alpha,
             beta=self.bart.beta,
             split_prior=splitting_probs,
-            split_rules_py=self.bart.split_rules,
+            split_rules=split_rules,
             response_rule=self.bart.response,
             resampling_rule="systematic",
             batch_size=batch
@@ -201,14 +201,10 @@ class PGBART(ArrayStepShared):
     def astep(self, _):
     #     # Record time to quantify performance improvements
         t0 = perf_counter()
-    #     self.compiled_pymc_model.update_shared_arrays()
+        self.compiled_pymc_model.update_shared_arrays()
     #     sum_trees, variable_inclusion = step(self.state, self.tune)
         sum_trees = self.pg_bart.step()
-        print(sum_trees)
-        sum_trees = np.zeros(self.bart.Y.shape[0])
         t1 = perf_counter()
-
-        print((t1 - t0) * 1e6)
 
         stats = {
             "variable_inclusion": np.array([0.0]),

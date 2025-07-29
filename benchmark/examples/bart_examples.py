@@ -127,17 +127,18 @@ def test_coal(args):
     #     sum_trees, stats = step.astep(i)
     #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
-    # _, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     # rates = idata.posterior["exp_mu"] / 4
     # rate_mean = rates.mean(dim=["draw", "chain"])
     # ax.plot(x_centers, rate_mean, "w", lw=3)
+    ax.plot(x_centers, sum_trees[0])
     # ax.plot(x_centers, y_data / 4, "k.")
     # az.plot_hdi(x_centers, rates, smooth=False)
     # az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
     # ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
     # ax.set_xlabel("years")
     # ax.set_ylabel("rate")
-    # plt.show()
+    plt.show()
 
 
 def test_asymmetric_laplace(args):

@@ -9,17 +9,20 @@ use pyo3::PyResult;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
-use crate::particle::LeafVal;
+use crate::{particle::LeafVal, update::TreeContext};
 
 /// Response method interface for computing leaf (terminal) node values using
 /// various methods such as MOTR-BART, TVP-BART, and GP-BART.
 pub trait ResponseStrategy {
+    type Context;
+
     /// Sample a leaf value given the data indices that belong to this leaf node.
     fn sample_leaf_value(
         &self,
-        y: &Array1<f64>,
-        data_indices: &[usize],
         rng: &mut impl Rng,
+        y_data: &Array1<f64>,
+        data_indices: &[usize],
+        n_trees: usize,
     ) -> LeafVal;
 
     /// Update internal state if needed (for stateful strategies)
@@ -34,11 +37,14 @@ pub trait ResponseStrategy {
 pub struct MotrStrategy;
 
 impl ResponseStrategy for MotrStrategy {
+    type Context = TreeContext;
+
     fn sample_leaf_value(
         &self,
-        y: &Array1<f64>,
-        data_indices: &[usize],
         rng: &mut impl Rng,
+        y_data: &Array1<f64>,
+        data_indices: &[usize],
+        n_trees: usize,
     ) -> LeafVal {
         todo!("Not implemented")
     }
@@ -55,12 +61,18 @@ pub struct GaussianResponseStrategy;
 pub type MeanResponse = GaussianResponseStrategy;
 
 impl ResponseStrategy for GaussianResponseStrategy {
+    type Context = TreeContext;
+
     fn sample_leaf_value(
         &self,
-        y: &Array1<f64>,
-        data_indices: &[usize],
         rng: &mut impl Rng,
+        y_data: &Array1<f64>,
+        data_indices: &[usize],
+        n_trees: usize,
     ) -> LeafVal {
+        let dist = Normal::new(0.0, 1.0).unwrap();
+        let norm = dist.sample(rng);
+
         if data_indices.is_empty() {
             // If no data points, sample from N(0, variance)
             let dist = Normal::new(0.0, 1.0).unwrap();
@@ -68,12 +80,14 @@ impl ResponseStrategy for GaussianResponseStrategy {
         }
 
         // Compute empirical mean
-        let sum_y: f64 = data_indices.iter().map(|&i| y[i]).sum();
-        let mean_y = sum_y / data_indices.len() as f64;
+        let sum_y: f64 = data_indices.iter().map(|&i| y_data[i]).sum();
+        let mean_y = sum_y / y_data.len() as f64 / n_trees as f64 + norm;
 
-        // Sample around the empirical mean
-        let dist = Normal::new(mean_y, 1.0).unwrap();
-        dist.sample(rng)
+        mean_y
+
+        // // Sample around the empirical mean
+        // let dist = Normal::new(mean_y, 1.0).unwrap();
+        // dist.sample(rng)
     }
 }
 
@@ -98,14 +112,17 @@ impl ResponseStrategies {
 
     pub fn sample_leaf_value(
         &self,
-        y: &Array1<f64>,
-        data_indices: &[usize],
         rng: &mut impl Rng,
+        y_data: &Array1<f64>,
+        data_indices: &[usize],
+        n_trees: usize,
     ) -> LeafVal {
         match self {
-            ResponseStrategies::Motr(strategy) => strategy.sample_leaf_value(y, data_indices, rng),
+            ResponseStrategies::Motr(strategy) => {
+                strategy.sample_leaf_value(rng, y_data, data_indices, n_trees)
+            }
             ResponseStrategies::Gaussian(strategy) => {
-                strategy.sample_leaf_value(y, data_indices, rng)
+                strategy.sample_leaf_value(rng, y_data, data_indices, n_trees)
             }
         }
     }

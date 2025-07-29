@@ -1,6 +1,6 @@
-use std::{f64, rc::Rc, usize};
+use std::{collections::VecDeque, f64, rc::Rc, usize};
 
-use numpy::ndarray::{Array, Ix2};
+use numpy::ndarray::{Array, Ix1, Ix2};
 
 // A Particle is a shared pointer to a tree
 pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
@@ -25,7 +25,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         let mut split_var = Vec::with_capacity(MAX_NODES);
         let mut split_val = Vec::with_capacity(MAX_NODES);
         let mut leaf_val = Vec::with_capacity(MAX_NODES);
-        let leaf_indices = vec![0; n_samples];
+        let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
 
         // Initialize the root as a leaf
         split_var.push(usize::MAX);
@@ -102,7 +102,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         right_val: f64,
     ) {
         // Ensure we have space for two new children
-        let left_child = 2 * leaf_idx + 1;
+        let left_child = 2 * leaf_idx + 1; // For completeness
         let right_child = 2 * leaf_idx + 2;
 
         // With constant generics, we know the capacity at compile time
@@ -112,24 +112,42 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
             MAX_NODES
         );
 
+        // Resize vectors to accommodate the new indices
+        let required_size = right_child + 1;
+        self.split_var.resize(required_size, usize::MAX);
+        self.split_val.resize(required_size, f64::NAN);
+        self.leaf_val.resize(required_size, 0.0);
+
+        // Now set values at the correct indices
         self.split_var[leaf_idx] = split_var;
         self.split_val[leaf_idx] = split_val;
-        self.leaf_val[leaf_idx] = f64::NAN; // Leaf node becomes an internal node
+        self.leaf_val[leaf_idx] = f64::NAN;
 
-        // Left child
-        self.split_var.push(usize::MAX);
-        self.split_val.push(f64::MAX);
-        self.leaf_val.push(left_val);
+        self.split_var[left_child] = usize::MAX;
+        self.split_val[left_child] = f64::NAN;
+        self.leaf_val[left_child] = left_val;
 
-        // Right child
-        self.split_var.push(usize::MAX);
-        self.split_val.push(f64::MAX);
-        self.leaf_val.push(right_val);
+        self.split_var[right_child] = usize::MAX;
+        self.split_val[right_child] = f64::NAN;
+        self.leaf_val[right_child] = right_val;
 
-        self.size = self.size.max(right_child + 1);
+        self.size = self.size.max(required_size);
 
-        // Update leaf assignments
-        // self.update_leaf_assignments(leaf_idx, split_var, split_val, left_child, right_child);
+        // self.split_var[leaf_idx] = split_var;
+        // self.split_val[leaf_idx] = split_val;
+        // self.leaf_val[leaf_idx] = f64::NAN; // Leaf node becomes an internal node
+
+        // // Left child
+        // self.split_var.push(usize::MAX);
+        // self.split_val.push(f64::MAX);
+        // self.leaf_val.push(left_val);
+
+        // // Right child
+        // self.split_var.push(usize::MAX);
+        // self.split_val.push(f64::MAX);
+        // self.leaf_val.push(right_val);
+
+        // self.size = self.size.max(right_child + 1);
     }
 
     /// Updates leaf assignments with context after a split
@@ -147,24 +165,75 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
     ) {
         let base_child = 2 * split_node_idx + 1; // Left child
 
-        // Update assignments for samples that were in the split node using
-        // bit manipulation
+        // Update assignments for samples that were in the split node using bit manipulation
         for &sample_idx in affected_samples {
             let sample_val = x_data[[sample_idx, split_var]];
             let child_offset = (sample_val >= split_val) as usize;
             self.leaf_indices[sample_idx] = base_child + child_offset;
-
-            // NOTE: Can remove
-            // Assign to left or right child based on split value
-            // self.leaf_indices[sample_idx] = if sample_val < split_val {
-            // left_child
-            // } else {
-            // right_child
-            // };
         }
     }
 
     pub fn predict(&self, x: &[Vec<f64>]) -> Vec<f64> {
         todo!("Not implemented")
+    }
+}
+
+/// Predict interface for computing predictions using an array-based binary decision tree.
+///
+/// A distinction is made between predicting on training and test data. When computing predictions
+/// on training data, the `leaf_indices` vector effectively serves as a lookup to determine the leaf
+/// value for this data sample. When computing predictions on test data (new unseen data), one needs
+/// to perform a tree traversal to compute which leaf node a data sample falls into.
+pub trait Predict {
+    fn predict_training(&self) -> Array<f64, Ix1>;
+    // fn predict_single_test(&self, data: &[f64]) -> f64;
+    // Computes predictions for two-dimensional data using the binary decision tree.
+    //
+    // Takes a two-dimensional design matrix and returns a one-dimensional array of predictions.
+    // For each leaf node in the tree, assigns that node's leaf value to all data samples that
+    // fall into that node.
+    fn predict_batch_test(&self, data: &Array<f64, Ix2>) -> Array<f64, Ix1>;
+}
+
+impl<const MAX_NODES: usize> Predict for Tree<MAX_NODES> {
+    fn predict_training(&self) -> Array<f64, Ix1> {
+        self.leaf_indices
+            .iter()
+            .map(|&leaf_idx| self.leaf_val[leaf_idx])
+            .collect()
+    }
+
+    /// Predict on test data by traversing the tree
+    fn predict_batch_test(&self, data: &Array<f64, Ix2>) -> Array<f64, Ix1> {
+        let mut predictions = Array::zeros(data.nrows());
+
+        for (sample_idx, sample) in data.outer_iter().enumerate() {
+            let mut node_idx = 0;
+
+            // Traverse tree until we reach a leaf
+            while node_idx < self.size && !self.is_leaf(node_idx) {
+                let split_var = self.split_var[node_idx];
+                let split_val = self.split_val[node_idx];
+
+                // TODO: Update to arithmetic
+                if sample[split_var] < split_val {
+                    node_idx = 2 * node_idx + 1; // Left child
+                } else {
+                    node_idx = 2 * node_idx + 2; // Right child
+                }
+
+                // Safety check to prevent infinite loops
+                if node_idx >= MAX_NODES {
+                    break;
+                }
+            }
+
+            // Assign leaf value
+            if node_idx < self.size && self.is_leaf(node_idx) {
+                predictions[sample_idx] = self.leaf_val[node_idx];
+            }
+        }
+
+        predictions
     }
 }

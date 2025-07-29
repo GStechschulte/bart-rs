@@ -1,9 +1,14 @@
 use std::{f64, rc::Rc};
 
-use numpy::ndarray::{Array, Array1, Ix2};
+use numpy::ndarray::{Array, Array1, Ix1, Ix2};
 use rand::Rng;
 
-use crate::{particle::Particle, response::ResponseStrategy, splitting::SplitRules};
+use crate::{
+    particle::{Particle, Predict, Tree},
+    response::ResponseStrategy,
+    splitting::SplitRules,
+    LogpFunc,
+};
 
 /// Represents the decision outcome for update proposals
 #[derive(Clone, Debug)]
@@ -35,8 +40,9 @@ pub struct TreeContext {
     pub alpha: f64,
     pub beta: f64,
     pub sigma: f64,
+    pub n_trees: usize,
     pub min_samples_leaf: usize,
-    pub max_depth: usize,
+    pub max_nodes: usize,
     pub splitting_probs: Option<Array1<f64>>,
 }
 
@@ -86,7 +92,7 @@ pub trait Update<const MAX_NODES: usize> {
     /// Apply a mutation proposal to a particle.
     fn apply_update(
         &self,
-        particle: &mut Particle<MAX_NODES>,
+        particle: &mut Tree<MAX_NODES>,
         proposal: &Self::Proposal,
         context: &Self::Context,
     );
@@ -94,9 +100,7 @@ pub trait Update<const MAX_NODES: usize> {
 
 /// Weight calculation trait with const generic support
 pub trait Weight<const MAX_NODES: usize> {
-    type Context;
-
-    fn log_weight(&self, particle: &Particle<MAX_NODES>, context: &Self::Context) -> f64;
+    fn log_weight(&self, data: &Array<f64, Ix1>) -> f64;
 }
 
 impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpdater<R> {
@@ -142,17 +146,14 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
 
     fn apply_update(
         &self,
-        tree: &mut Particle<MAX_NODES>,
+        tree: &mut Tree<MAX_NODES>,
         proposal: &Self::Proposal,
         context: &Self::Context,
     ) {
-        // Conditional clone using Rc::make_mut
-        let tree_mut = Rc::make_mut(tree);
-
         // Get samples that belong to the node being split before the split happens
-        let node_samples = tree_mut.get_leaf_samples(proposal.node_idx);
+        let node_samples = tree.get_leaf_samples(proposal.node_idx);
 
-        tree_mut.split_node(
+        tree.split_node(
             proposal.node_idx,
             proposal.split_var,
             proposal.split_val,
@@ -161,7 +162,7 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
         );
 
         // Update leaf assignments for the affected samples
-        tree_mut.update_leaf_assignments(
+        tree.update_leaf_assignments(
             proposal.node_idx,
             proposal.split_var,
             proposal.split_val,
@@ -230,7 +231,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
             && right_indices.len() >= context.min_samples_leaf
     }
 
-    /// Propose leaf values using the integrated response strategy
+    /// Propose leaf values using a response strategy.
     fn propose_leaf_values<const MAX_NODES: usize>(
         &self,
         rng: &mut impl Rng,
@@ -248,13 +249,19 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
             split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
 
         // Sample leaf values using the response strategy
-        let left_value =
-            self.response_strategy
-                .sample_leaf_value(&context.y_data, &left_indices, rng);
+        let left_value = self.response_strategy.sample_leaf_value(
+            rng,
+            &context.y_data,
+            &left_indices,
+            context.n_trees,
+        );
 
-        let right_value =
-            self.response_strategy
-                .sample_leaf_value(&context.y_data, &right_indices, rng);
+        let right_value = self.response_strategy.sample_leaf_value(
+            rng,
+            &context.y_data,
+            &right_indices,
+            context.n_trees,
+        );
 
         (left_value, right_value)
     }
@@ -277,25 +284,12 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
 }
 
 /// BART weight calculator
-pub struct BARTWeighter;
-
-impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
-    type Context = TreeContext;
-
-    fn log_weight(&self, tree: &Particle<MAX_NODES>, context: &Self::Context) -> f64 {
-        self.compute_log_likelihood(tree, context)
-    }
+pub struct BARTWeighter {
+    pub logp_func: LogpFunc,
 }
 
-impl BARTWeighter {
-    fn compute_log_likelihood<const MAX_NODES: usize>(
-        &self,
-        _tree: &Particle<MAX_NODES>,
-        _context: &TreeContext,
-    ) -> f64 {
-        // TODO: Implement actual log-likelihood computation
-        // This should compute the likelihood of the data given the tree predictions
-        let mut rng = rand::rng();
-        rng.random()
+impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
+    fn log_weight(&self, data: &Array<f64, Ix1>) -> f64 {
+        unsafe { (self.logp_func)(data.as_ptr(), data.len()) }
     }
 }

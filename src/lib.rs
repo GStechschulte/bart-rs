@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::c_double;
+use std::str::Split;
 
 pub mod base;
 pub mod builder;
@@ -11,6 +12,7 @@ pub mod splitting;
 pub mod update;
 
 use crate::builder::{BartSampler, BartSamplerBuilder};
+use crate::response::{ResponseStrategies, ResponseStrategy};
 use crate::splitting::SplitRules;
 use crate::update::TreeContext;
 
@@ -31,13 +33,13 @@ pub struct PyBartSettings {
     init_leaf_std: f64,
     n_trees: usize,
     n_particles: usize,
-    max_depth: usize,
+    max_nodes: usize,
     alpha: f64,
     beta: f64,
     split_prior: Vec<f64>,
     /// Key-value pair indicating the split rule for each dimension of the design matrix.
-    split_rules: HashMap<usize, SplitRules>,
-    response_rule: String,
+    split_rules: Vec<SplitRules>,
+    response_rule: ResponseStrategies,
     resampling_rule: String,
     batch_size: (f64, f64),
 }
@@ -50,27 +52,28 @@ impl PyBartSettings {
         init_leaf_std: f64,
         n_trees: usize,
         n_particles: usize,
-        max_depth: usize,
+        max_nodes: usize,
         alpha: f64,
         beta: f64,
         split_prior: Vec<f64>,
-        split_rules_py: HashMap<usize, String>,
+        split_rules: Vec<String>,
         response_rule: String,
         resampling_rule: String,
         batch_size: (f64, f64),
     ) -> PyResult<Self> {
-        let mut split_rules = HashMap::new();
-        for (dim, rule_name) in split_rules_py {
-            let rule = SplitRules::from_str(&rule_name)?;
-            split_rules.insert(dim, rule);
-        }
+        let split_rules: Vec<SplitRules> = split_rules
+            .iter()
+            .map(|rule| SplitRules::from_str(rule))
+            .collect::<PyResult<Vec<SplitRules>>>()?;
+
+        let response_rule = ResponseStrategies::from_str(response_rule.as_str())?;
 
         Ok(Self {
             init_leaf_value,
             init_leaf_std,
             n_trees,
             n_particles,
-            max_depth,
+            max_nodes,
             alpha,
             beta,
             split_prior,
@@ -103,11 +106,13 @@ impl PySampler {
         let logp_func: LogpFunc = unsafe { std::mem::transmute(model as *const ()) };
 
         let sampler = BartSamplerBuilder::new()
-            // .max_nodes = settings.max_nodes;
-            // .n_particles = settings.n_particles;
-            // .init_leaf_value = settings.init_leaf_value;
-            // ... set other fields
-            .build(&x_data, &y_data)?;
+            .with_max_nodes(settings.max_nodes)
+            .with_n_particles(settings.n_particles)
+            .with_init_leaf_value(settings.init_leaf_value)
+            .with_split_strategies(settings.split_rules)
+            .with_response_strategy(settings.response_rule)
+            .with_bart_params(settings.alpha, settings.beta, 1.0)
+            .build(&x_data, &y_data, logp_func)?;
 
         let context = TreeContext {
             x_data: x_data,
@@ -115,9 +120,10 @@ impl PySampler {
             alpha: settings.alpha,
             beta: settings.beta,
             sigma: 1.0,
+            n_trees: settings.n_trees,
             splitting_probs: Some(settings.split_prior.into()),
-            min_samples_leaf: 1,
-            max_depth: settings.max_depth,
+            min_samples_leaf: 2,
+            max_nodes: settings.max_nodes,
         };
 
         Ok(PySampler { sampler, context })
@@ -126,8 +132,14 @@ impl PySampler {
     fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
         let seed = 42;
         let mut rng = SmallRng::seed_from_u64(seed);
-        let weights = self.sampler.step(&mut rng, &self.context);
-        Ok(PyArray1::from_vec(py, weights))
+        // TODO: Add a predictions buffer to avoid repeated allocations
+        let py_ensemble_predictions = self.sampler.step(&mut rng, &self.context);
+        Ok(PyArray1::from_slice(
+            py,
+            py_ensemble_predictions.as_slice().unwrap(),
+        ))
+        // let vec_ensemble_predictions = py_ensemble_predictions.to_vec();
+        // Ok(PyArray1::from_vec(py, vec_ensemble_predictions))
     }
 }
 
