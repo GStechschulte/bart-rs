@@ -4,10 +4,10 @@ use numpy::ndarray::{Array, Array1, Ix1, Ix2};
 use rand::Rng;
 
 use crate::{
+    LogpFunc,
     particle::{Particle, Predict, Tree},
     response::ResponseStrategy,
     splitting::SplitRules,
-    LogpFunc,
 };
 
 /// Represents the decision outcome for update proposals

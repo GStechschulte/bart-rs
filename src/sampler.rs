@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use numpy::ndarray::{Array, Ix1};
 use rand::Rng;
-use rand_distr::weighted::WeightedIndex;
 use rand_distr::Distribution;
+use rand_distr::weighted::WeightedIndex;
 
 use crate::base::BartState;
 use crate::particle::{Particle, Predict, Tree};

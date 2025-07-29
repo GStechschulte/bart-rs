@@ -4,8 +4,8 @@
 //! based on their normalized weights.
 use rand::Rng;
 
-use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
+use pyo3::exceptions::PyValueError;
 
 /// Resampling interface for implementing different resampling methods
 pub trait ResamplingStrategy {

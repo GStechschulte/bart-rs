@@ -17,12 +17,12 @@ use crate::splitting::SplitRules;
 use crate::update::TreeContext;
 
 use numpy::{
-    ndarray::{Ix1, Ix2},
     PyArray1, PyReadonlyArray,
+    ndarray::{Ix1, Ix2},
 };
 use pyo3::prelude::*;
-use rand::rngs::SmallRng;
 use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 pub type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 

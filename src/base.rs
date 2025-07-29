@@ -1,4 +1,4 @@
-use numpy::{ndarray::Array, Ix1};
+use numpy::{Ix1, ndarray::Array};
 
 use crate::particle::Tree;
 

@@ -2,12 +2,13 @@
 
 use std::rc::Rc;
 
-use numpy::ndarray::{Array, Ix1};
 use numpy::Ix2;
-use pyo3::exceptions::PyValueError;
+use numpy::ndarray::{Array, Ix1};
 use pyo3::PyResult;
+use pyo3::exceptions::PyValueError;
 use rand::rngs::SmallRng;
 
+use crate::LogpFunc;
 use crate::base::BartState;
 use crate::particle::{Particle, Tree};
 use crate::resampling::SystematicResampling;
@@ -15,7 +16,6 @@ use crate::response::{GaussianResponseStrategy, ResponseStrategies};
 use crate::sampler::ParticleGibbsSampler;
 use crate::splitting::{ContinuousSplit, SplitRules};
 use crate::update::{BARTWeighter, TreeContext, TreeUpdater};
-use crate::LogpFunc;
 
 // Type aliases for different node capacities using concrete ResponseStrategy
 type Sampler127 = ParticleGibbsSampler<

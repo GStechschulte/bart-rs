@@ -15,7 +15,7 @@
 [package]
 name = "pymc-bart"
 version = "0.1.2"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "pymc_bart"

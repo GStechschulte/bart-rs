@@ -4,8 +4,8 @@
 //! including MOTR-BART, TVP-BART, and GP-BART approaches.
 
 use numpy::ndarray::Array1;
-use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
+use pyo3::exceptions::PyValueError;
 use rand::Rng;
 use rand_distr::{Distribution, Normal};
 
@@ -106,7 +106,7 @@ impl ResponseStrategies {
             _ => Err(PyValueError::new_err(format!(
                 "Unknown split rule: '{}'. Supported split rules are 'ContinuousSplit' and 'OneHotSplit'.",
                 response_name
-        ))),
+            ))),
         }
     }
 

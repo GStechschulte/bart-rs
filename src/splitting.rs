@@ -2,8 +2,8 @@
 //! supports sampling split values from a set of candidates and dividing data points based on
 //! the chosen split value.
 use numpy::ndarray::Array2;
-use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
+use pyo3::exceptions::PyValueError;
 use rand::Rng;
 
 pub trait SplitRule {
