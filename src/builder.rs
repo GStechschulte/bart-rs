@@ -1,7 +1,5 @@
 //! Builder pattern for constructing BART samplers with static dispatch
 
-use std::rc::Rc;
-
 use numpy::Ix2;
 use numpy::ndarray::{Array, Ix1};
 use pyo3::PyResult;
@@ -10,7 +8,7 @@ use rand::rngs::SmallRng;
 
 use crate::LogpFunc;
 use crate::base::BartState;
-use crate::particle::{Particle, Tree};
+use crate::particle::Tree;
 use crate::resampling::SystematicResampling;
 use crate::response::{GaussianResponseStrategy, ResponseStrategies};
 use crate::sampler::ParticleGibbsSampler;

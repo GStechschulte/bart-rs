@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, f64, rc::Rc, usize};
+use std::{f64, rc::Rc, usize};
 
 use numpy::ndarray::{Array, Ix1, Ix2};
 

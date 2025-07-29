@@ -1,6 +1,4 @@
-use std::collections::HashMap;
 use std::ffi::c_double;
-use std::str::Split;
 
 pub mod base;
 pub mod builder;
@@ -12,7 +10,7 @@ pub mod splitting;
 pub mod update;
 
 use crate::builder::{BartSampler, BartSamplerBuilder};
-use crate::response::{ResponseStrategies, ResponseStrategy};
+use crate::response::ResponseStrategies;
 use crate::splitting::SplitRules;
 use crate::update::TreeContext;
 

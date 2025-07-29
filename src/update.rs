@@ -1,4 +1,4 @@
-use std::{f64, rc::Rc};
+use std::f64;
 
 use numpy::ndarray::{Array, Array1, Ix1, Ix2};
 use rand::Rng;
@@ -6,7 +6,7 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     LogpFunc,
-    particle::{Particle, Predict, Tree},
+    particle::{Particle, Tree},
     response::ResponseStrategy,
     splitting::SplitRules,
 };
