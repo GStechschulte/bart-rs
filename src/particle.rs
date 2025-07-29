@@ -76,20 +76,19 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
     }
 
     /// Get data (samples) indices for a leaf node.
-    pub fn get_leaf_samples(&self, leaf_idx: usize) -> Vec<usize> {
+    pub fn get_leaf_samples(&self, leaf_idx: usize) -> impl Iterator<Item = usize> + '_ {
         debug_assert!(self.is_leaf(leaf_idx), "Node {} is not a leaf", leaf_idx);
 
         self.leaf_indices
             .iter()
             .enumerate()
-            .filter_map(|(sample_idx, &assigned_leaf)| {
+            .filter_map(move |(sample_idx, &assigned_leaf)| {
                 if assigned_leaf == leaf_idx {
                     Some(sample_idx)
                 } else {
                     None
                 }
             })
-            .collect()
     }
 
     /// Splits (converts) a leaf node into an internal node and adds two new children leaf nodes.

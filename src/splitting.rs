@@ -1,30 +1,33 @@
 //! Split rule trait definitions and implementations for decision trees. The module
 //! supports sampling split values from a set of candidates and dividing data points based on
 //! the chosen split value.
-use numpy::ndarray::Array2;
+use std::collections::HashSet;
+
+use numpy::Ix2;
+use numpy::ndarray::Array;
 use pyo3::PyResult;
 use pyo3::exceptions::PyValueError;
 use rand::Rng;
 
 pub trait SplitRule {
     // The data type associated with the split rule strategy
-    type Value;
+    type Value: Copy;
 
     /// Samples a split value from the candidate points
-    fn sample_split_value(
-        &self,
-        rng: &mut impl Rng,
-        candidates: &[Self::Value],
-    ) -> Option<Self::Value>;
+    fn sample_split_value<I>(&self, rng: &mut impl Rng, candidates: I) -> Option<Self::Value>
+    where
+        I: Iterator<Item = Self::Value>;
 
     /// Splits data indices based on feature values and threshold
-    fn split_data_indices(
+    fn split_data_indices<I>(
         &self,
-        data: &Array2<f64>,
+        data: &Array<f64, Ix2>,
         feature_idx: usize,
         threshold: Self::Value,
-        data_indices: &[usize],
-    ) -> (Vec<usize>, Vec<usize>);
+        data_indices: I,
+    ) -> (Vec<usize>, Vec<usize>)
+    where
+        I: Iterator<Item = usize>;
 }
 
 /// Continuous split rule.
@@ -37,18 +40,20 @@ pub struct ContinuousSplit;
 impl SplitRule for ContinuousSplit {
     type Value = f64;
 
-    fn sample_split_value(
-        &self,
-        rng: &mut impl Rng,
-        candidates: &[Self::Value],
-    ) -> Option<Self::Value> {
-        if candidates.is_empty() {
+    fn sample_split_value<I>(&self, rng: &mut impl Rng, candidates: I) -> Option<Self::Value>
+    where
+        I: Iterator<Item = Self::Value>,
+    {
+        let mut candidates = candidates.peekable();
+
+        if candidates.peek().is_none() {
             return None;
         }
 
-        // For continuous variables, we can sample any value between min and max
-        let min_val = candidates.iter().copied().fold(f64::INFINITY, f64::min);
-        let max_val = candidates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let initial = candidates.next().unwrap();
+        let (min_val, max_val) = candidates.fold((initial, initial), |(min, max), val| {
+            (min.min(val), max.max(val))
+        });
 
         if min_val >= max_val {
             return None;
@@ -58,25 +63,17 @@ impl SplitRule for ContinuousSplit {
         Some(rng.random_range(min_val..max_val))
     }
 
-    fn split_data_indices(
+    fn split_data_indices<I>(
         &self,
-        data: &Array2<f64>,
+        data: &Array<f64, Ix2>,
         feature_idx: usize,
         threshold: Self::Value,
-        data_indices: &[usize],
-    ) -> (Vec<usize>, Vec<usize>) {
-        let mut left_indices = Vec::new();
-        let mut right_indices = Vec::new();
-
-        for &idx in data_indices {
-            if data[[idx, feature_idx]] < threshold {
-                left_indices.push(idx);
-            } else {
-                right_indices.push(idx);
-            }
-        }
-
-        (left_indices, right_indices)
+        data_indices: I,
+    ) -> (Vec<usize>, Vec<usize>)
+    where
+        I: Iterator<Item = usize>,
+    {
+        data_indices.partition(|&idx| data[[idx, feature_idx]] < threshold)
     }
 }
 
@@ -88,20 +85,18 @@ pub struct OneHotSplit;
 impl SplitRule for OneHotSplit {
     type Value = i32;
 
-    fn sample_split_value(
-        &self,
-        rng: &mut impl Rng,
-        candidates: &[Self::Value],
-    ) -> Option<Self::Value> {
-        if candidates.is_empty() {
+    fn sample_split_value<I>(&self, rng: &mut impl Rng, candidates: I) -> Option<Self::Value>
+    where
+        I: Iterator<Item = Self::Value>,
+    {
+        let mut candidates = candidates.peekable();
+
+        if candidates.peek().is_none() {
             return None;
         }
 
-        // For categorical variables, randomly select one of the unique values
-        // Better approach - avoid double collection
-        let mut unique_vals: Vec<Self::Value> = candidates.to_vec();
-        unique_vals.sort_unstable();
-        unique_vals.dedup();
+        // Collect into a HashSet to get unique values efficiently.
+        let unique_vals: Vec<i32> = candidates.collect::<HashSet<_>>().into_iter().collect();
 
         if unique_vals.len() <= 1 {
             return None;
@@ -110,25 +105,18 @@ impl SplitRule for OneHotSplit {
         Some(unique_vals[rng.random_range(0..unique_vals.len())])
     }
 
-    fn split_data_indices(
+    // Refactored to use partition
+    fn split_data_indices<I>(
         &self,
-        data: &Array2<f64>,
+        data: &Array<f64, Ix2>,
         feature_idx: usize,
         threshold: Self::Value,
-        data_indices: &[usize],
-    ) -> (Vec<usize>, Vec<usize>) {
-        let mut left_indices = Vec::new();
-        let mut right_indices = Vec::new();
-
-        for &idx in data_indices {
-            if data[[idx, feature_idx]] as i32 == threshold {
-                left_indices.push(idx);
-            } else {
-                right_indices.push(idx);
-            }
-        }
-
-        (left_indices, right_indices)
+        data_indices: I,
+    ) -> (Vec<usize>, Vec<usize>)
+    where
+        I: Iterator<Item = usize>,
+    {
+        data_indices.partition(|&idx| (data[[idx, feature_idx]] as i32) == threshold)
     }
 }
 
@@ -150,24 +138,30 @@ impl SplitRules {
         }
     }
 
-    pub fn sample_split_value(&self, rng: &mut impl Rng, candidates: &[f64]) -> Option<f64> {
+    pub fn sample_split_value<I>(&self, rng: &mut impl Rng, candidates: I) -> Option<f64>
+    where
+        I: Iterator<Item = f64>,
+    {
         match self {
             SplitRules::Continuous(rule) => rule.sample_split_value(rng, candidates),
             SplitRules::OneHot(rule) => {
-                let int_candidates: Vec<i32> = candidates.iter().map(|&x| x as i32).collect();
-                rule.sample_split_value(rng, &int_candidates)
+                let int_candidates: Vec<i32> = candidates.map(|x| x as i32).collect();
+                rule.sample_split_value(rng, int_candidates.into_iter())
                     .map(|x| x as f64)
             }
         }
     }
 
-    pub fn split_data_indices(
+    pub fn split_data_indices<I>(
         &self,
-        data: &Array2<f64>,
+        data: &Array<f64, Ix2>,
         feature_idx: usize,
         threshold: f64,
-        data_indices: &[usize],
-    ) -> (Vec<usize>, Vec<usize>) {
+        data_indices: I,
+    ) -> (Vec<usize>, Vec<usize>)
+    where
+        I: Iterator<Item = usize>,
+    {
         match self {
             SplitRules::Continuous(rule) => {
                 rule.split_data_indices(data, feature_idx, threshold, data_indices)

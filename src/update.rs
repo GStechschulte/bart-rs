@@ -2,6 +2,7 @@ use std::{f64, rc::Rc};
 
 use numpy::ndarray::{Array, Array1, Ix1, Ix2};
 use rand::Rng;
+use rand_distr::{Distribution, Normal};
 
 use crate::{
     LogpFunc,
@@ -19,7 +20,9 @@ pub enum MutationDecision {
     Reject,
 }
 
-/// BART Tree proposal types. Currently, only growth proposals are supported.
+/// BART Tree proposal types. A proposal can be thought of as a unit
+/// of work as it contains all the information needed to perform, for
+/// example, a growth mutation.
 ///
 /// **NOTE**: If more proposal variants are added in the future, a proposal
 /// enum should be introduced.
@@ -30,6 +33,7 @@ pub struct TreeProposal {
     pub split_val: f64,
     pub left_value: f64,
     pub right_value: f64,
+    pub affected_samples: Vec<usize>,
 }
 
 /// Contains relevant parameters needed for SMC update steps.
@@ -122,18 +126,22 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
             return MutationDecision::Reject;
         }
 
+        let node_samples: Vec<usize> = tree.get_leaf_samples(node_idx).collect();
+
         // Generate and validate proposal using integrated strategies
-        let (split_var, split_val) = match self.propose_split(rng, tree, node_idx, context) {
+        let (split_var, split_val) = match self.propose_split(rng, &node_samples, node_idx, context)
+        {
             Some(split) => split,
             None => return MutationDecision::Reject,
         };
 
-        if !self.is_valid_split(tree, node_idx, split_var, split_val, context) {
-            return MutationDecision::Reject;
-        }
+        // TODO: Move this to the propose_split?
+        // if !self.is_valid_split(tree, node_idx, split_var, split_val, context) {
+        //     return MutationDecision::Reject;
+        // }
 
         let (left_val, right_val) =
-            self.propose_leaf_values(rng, tree, node_idx, split_var, split_val, context);
+            self.propose_leaf_values(rng, &node_samples, split_var, split_val, context);
 
         MutationDecision::Accept(TreeProposal {
             node_idx,
@@ -141,6 +149,7 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
             split_val,
             left_value: left_val,
             right_value: right_val,
+            affected_samples: node_samples,
         })
     }
 
@@ -150,9 +159,6 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
         proposal: &Self::Proposal,
         context: &Self::Context,
     ) {
-        // Get samples that belong to the node being split before the split happens
-        let node_samples = tree.get_leaf_samples(proposal.node_idx);
-
         tree.split_node(
             proposal.node_idx,
             proposal.split_var,
@@ -160,13 +166,11 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
             proposal.left_value,
             proposal.right_value,
         );
-
-        // Update leaf assignments for the affected samples
         tree.update_leaf_assignments(
             proposal.node_idx,
             proposal.split_var,
             proposal.split_val,
-            &node_samples,
+            &proposal.affected_samples,
             &context.x_data,
         );
     }
@@ -174,10 +178,10 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
 
 impl<R: ResponseStrategy> TreeUpdater<R> {
     /// Propose a split using the integrated split strategies
-    fn propose_split<const MAX_NODES: usize>(
+    fn propose_split(
         &self,
         rng: &mut impl Rng,
-        tree: &Particle<MAX_NODES>,
+        node_samples: &[usize],
         node_idx: usize,
         context: &TreeContext,
     ) -> Option<(usize, f64)> {
@@ -189,79 +193,90 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         };
 
         // Get data indices for this node
-        let node_samples = tree.get_leaf_samples(node_idx);
-        if node_samples.is_empty() {
-            return None;
-        }
+        // let mut node_samples = tree.get_leaf_samples(node_idx).peekable();
+
+        // if node_samples.peek().is_none() {
+        // return None;
+        // }
 
         // Extract feature values for samples in this node
-        let feature_values: Vec<f64> = node_samples
+        let feature_values = node_samples
             .iter()
-            .map(|&idx| context.x_data[[idx, split_var]])
-            .collect();
+            .map(|&idx| context.x_data[[idx, split_var]]);
 
         // Use the appropriate split strategy for this feature
         let split_strategy = &self.split_strategies[split_var];
-        let split_val = split_strategy.sample_split_value(rng, &feature_values)?;
+        let split_val = split_strategy.sample_split_value(rng, feature_values)?;
 
         Some((split_var, split_val))
     }
 
-    /// Validate split using the integrated split strategies
-    fn is_valid_split<const MAX_NODES: usize>(
-        &self,
-        tree: &Particle<MAX_NODES>,
-        node_idx: usize,
-        split_var: usize,
-        split_val: f64,
-        context: &TreeContext,
-    ) -> bool {
-        let node_samples = tree.get_leaf_samples(node_idx);
-
-        if node_samples.len() < context.min_samples_leaf * 2 {
-            return false;
-        }
-
-        // Use the split strategy to determine the actual split
-        let split_strategy = &self.split_strategies[split_var];
-        let (left_indices, right_indices) =
-            split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
-
-        left_indices.len() >= context.min_samples_leaf
-            && right_indices.len() >= context.min_samples_leaf
-    }
-
     /// Propose leaf values using a response strategy.
-    fn propose_leaf_values<const MAX_NODES: usize>(
+    fn propose_leaf_values(
         &self,
         rng: &mut impl Rng,
-        tree: &Particle<MAX_NODES>,
-        node_idx: usize,
+        node_samples: &[usize],
         split_var: usize,
         split_val: f64,
         context: &TreeContext,
     ) -> (f64, f64) {
-        let node_samples = tree.get_leaf_samples(node_idx);
+        let initial_state = (0.0, 0, 0.0, 0);
+
+        let (left_sum_y, left_n, right_sum_y, right_n) = node_samples.iter().fold(
+            initial_state,
+            |(mut l_sum, mut l_n, mut r_sum, mut r_n), &idx| {
+                if context.x_data[[idx, split_var]] < split_val {
+                    l_sum += context.y_data[idx];
+                    l_n += 1;
+                } else {
+                    r_sum += context.y_data[idx];
+                    r_n += 1;
+                }
+                (l_sum, l_n, r_sum, r_n)
+            },
+        );
+
+        let left_value = {
+            let dist = Normal::new(0.0, 1.0).unwrap();
+            let norm = dist.sample(rng);
+            if left_n == 0 {
+                norm // Or whatever the empty case logic is
+            } else {
+                let mean_y = left_sum_y / context.y_data.len() as f64 / context.n_trees as f64;
+                mean_y + norm
+            }
+        };
+
+        let right_value = {
+            let dist = Normal::new(0.0, 1.0).unwrap();
+            let norm = dist.sample(rng);
+            if right_n == 0 {
+                norm // Or whatever the empty case logic is
+            } else {
+                let mean_y = right_sum_y / context.y_data.len() as f64 / context.n_trees as f64;
+                mean_y + norm
+            }
+        };
 
         // Split the data to get left and right child samples
-        let split_strategy = &self.split_strategies[split_var];
-        let (left_indices, right_indices) =
-            split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
+        // let split_strategy = &self.split_strategies[split_var];
+        // let (left_indices, right_indices) =
+        //     split_strategy.split_data_indices(&context.x_data, split_var, split_val, &node_samples);
 
         // Sample leaf values using the response strategy
-        let left_value = self.response_strategy.sample_leaf_value(
-            rng,
-            &context.y_data,
-            &left_indices,
-            context.n_trees,
-        );
+        // let left_value = self.response_strategy.sample_leaf_value(
+        //     rng,
+        //     &context.y_data,
+        //     &left_indices,
+        //     context.n_trees,
+        // );
 
-        let right_value = self.response_strategy.sample_leaf_value(
-            rng,
-            &context.y_data,
-            &right_indices,
-            context.n_trees,
-        );
+        // let right_value = self.response_strategy.sample_leaf_value(
+        //     rng,
+        //     &context.y_data,
+        //     &right_indices,
+        //     context.n_trees,
+        // );
 
         (left_value, right_value)
     }
