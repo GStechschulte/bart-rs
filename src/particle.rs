@@ -1,4 +1,8 @@
-use std::{f64, rc::Rc, usize};
+use std::{
+    f64,
+    rc::Rc,
+    usize::{self, MAX},
+};
 
 use numpy::ndarray::{Array, Ix1, Ix2};
 
@@ -12,9 +16,13 @@ pub type LeafIdx = usize;
 
 #[derive(Clone, Debug)]
 pub struct Tree<const MAX_NODES: usize> {
-    pub split_var: Vec<SplitVar>,
-    pub split_val: Vec<SplitVal>,
-    pub leaf_val: Vec<LeafVal>,
+    // pub split_var: Vec<SplitVar>,
+    // pub split_val: Vec<SplitVal>,
+    // pub leaf_val: Vec<LeafVal>,
+    // pub leaf_indices: Vec<LeafIdx>,
+    pub split_var: [SplitVar; MAX_NODES],
+    pub split_val: [SplitVal; MAX_NODES],
+    pub leaf_val: [LeafVal; MAX_NODES],
     pub leaf_indices: Vec<LeafIdx>,
     pub size: usize,
 }
@@ -22,23 +30,38 @@ pub struct Tree<const MAX_NODES: usize> {
 impl<const MAX_NODES: usize> Tree<MAX_NODES> {
     /// Create a new tree with just a root leaf node
     pub fn new(init_leaf_value: LeafVal, n_samples: usize) -> Self {
-        let mut split_var = Vec::with_capacity(MAX_NODES);
-        let mut split_val = Vec::with_capacity(MAX_NODES);
-        let mut leaf_val = Vec::with_capacity(MAX_NODES);
-        let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
+        let mut split_var = [usize::MAX; MAX_NODES];
+        let mut split_val = [f64::NAN; MAX_NODES];
+        let mut leaf_val = [0.0; MAX_NODES];
 
-        // Initialize the root as a leaf
-        split_var.push(usize::MAX);
-        split_val.push(f64::NAN);
-        leaf_val.push(init_leaf_value);
+        // Set only root values
+        leaf_val[0] = init_leaf_value;
 
         Self {
             split_var,
             split_val,
             leaf_val,
-            leaf_indices,
+            leaf_indices: vec![0; n_samples],
             size: 1,
         }
+
+        // let mut split_var = Vec::with_capacity(MAX_NODES);
+        // let mut split_val = Vec::with_capacity(MAX_NODES);
+        // let mut leaf_val = Vec::with_capacity(MAX_NODES);
+        // let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
+
+        // // Initialize the root as a leaf
+        // split_var.push(usize::MAX);
+        // split_val.push(f64::NAN);
+        // leaf_val.push(init_leaf_value);
+
+        // Self {
+        //     split_var,
+        //     split_val,
+        //     leaf_val,
+        //     leaf_indices,
+        //     size: 1,
+        // }
     }
 
     // Get the depth of a node in the binary tree
@@ -101,7 +124,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         right_val: f64,
     ) {
         // Ensure we have space for two new children
-        let left_child = 2 * leaf_idx + 1; // For completeness
+        let left_child = 2 * leaf_idx + 1;
         let right_child = 2 * leaf_idx + 2;
 
         // With constant generics, we know the capacity at compile time
@@ -111,13 +134,6 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
             MAX_NODES
         );
 
-        // Resize vectors to accommodate the new indices
-        let required_size = right_child + 1;
-        self.split_var.resize(required_size, usize::MAX);
-        self.split_val.resize(required_size, f64::NAN);
-        self.leaf_val.resize(required_size, 0.0);
-
-        // Now set values at the correct indices
         self.split_var[leaf_idx] = split_var;
         self.split_val[leaf_idx] = split_val;
         self.leaf_val[leaf_idx] = f64::NAN;
@@ -130,7 +146,28 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         self.split_val[right_child] = f64::NAN;
         self.leaf_val[right_child] = right_val;
 
-        self.size = self.size.max(required_size);
+        self.size = self.size.max(right_child + 1);
+
+        // // Resize vectors to accommodate the new indices
+        // let required_size = right_child + 1;
+        // self.split_var.resize(required_size, usize::MAX);
+        // self.split_val.resize(required_size, f64::NAN);
+        // self.leaf_val.resize(required_size, 0.0);
+
+        // // Now set values at the correct indices
+        // self.split_var[leaf_idx] = split_var;
+        // self.split_val[leaf_idx] = split_val;
+        // self.leaf_val[leaf_idx] = f64::NAN;
+
+        // self.split_var[left_child] = usize::MAX;
+        // self.split_val[left_child] = f64::NAN;
+        // self.leaf_val[left_child] = left_val;
+
+        // self.split_var[right_child] = usize::MAX;
+        // self.split_val[right_child] = f64::NAN;
+        // self.leaf_val[right_child] = right_val;
+
+        // self.size = self.size.max(required_size);
 
         // self.split_var[leaf_idx] = split_var;
         // self.split_val[leaf_idx] = split_val;

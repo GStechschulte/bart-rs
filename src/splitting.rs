@@ -45,7 +45,6 @@ impl SplitRule for ContinuousSplit {
         I: Iterator<Item = Self::Value>,
     {
         let mut candidates = candidates.peekable();
-
         if candidates.peek().is_none() {
             return None;
         }
@@ -59,7 +58,6 @@ impl SplitRule for ContinuousSplit {
             return None;
         }
 
-        // Sample uniformly between min and max
         Some(rng.random_range(min_val..max_val))
     }
 
@@ -90,7 +88,6 @@ impl SplitRule for OneHotSplit {
         I: Iterator<Item = Self::Value>,
     {
         let mut candidates = candidates.peekable();
-
         if candidates.peek().is_none() {
             return None;
         }
@@ -105,7 +102,6 @@ impl SplitRule for OneHotSplit {
         Some(unique_vals[rng.random_range(0..unique_vals.len())])
     }
 
-    // Refactored to use partition
     fn split_data_indices<I>(
         &self,
         data: &Array<f64, Ix2>,

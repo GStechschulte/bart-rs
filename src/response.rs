@@ -57,9 +57,6 @@ impl ResponseStrategy for MotrStrategy {
 #[derive(Clone, Copy, Debug)]
 pub struct GaussianResponseStrategy;
 
-/// Type alias for backward compatibility with benchmarks
-pub type MeanResponse = GaussianResponseStrategy;
-
 impl ResponseStrategy for GaussianResponseStrategy {
     type Context = TreeContext;
 
@@ -84,10 +81,6 @@ impl ResponseStrategy for GaussianResponseStrategy {
         let mean_y = sum_y / y_data.len() as f64 / n_trees as f64 + norm;
 
         mean_y
-
-        // // Sample around the empirical mean
-        // let dist = Normal::new(mean_y, 1.0).unwrap();
-        // dist.sample(rng)
     }
 }
 

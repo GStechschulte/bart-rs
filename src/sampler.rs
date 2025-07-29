@@ -42,7 +42,7 @@ where
         //     context.n_trees
         // );
 
-        let n_particles = 10;
+        let n_particles = 20;
         let mut updated_trees = Vec::with_capacity(context.n_trees);
         // let mut trees = state.ensemble_trees;
         // println!(
@@ -327,7 +327,6 @@ where
 }
 
 pub fn normalize_weights(weights: &[f64]) -> impl Iterator<Item = f64> + '_ {
-    // TODO: Do we have to clone here?
     let max_log_weight = weights.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     let sum_exp: f64 = weights.iter().map(|&w| (w - max_log_weight).exp()).sum();
 
