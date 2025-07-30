@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::rc::Rc;
 
-use numpy::ndarray::{Array, Array1, Ix1};
+use numpy::ndarray::{Array, Ix1};
 use rand::Rng;
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;

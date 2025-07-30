@@ -1,7 +1,7 @@
 use std::{
     f64,
     rc::Rc,
-    usize::{self, MAX},
+    usize::{self},
 };
 
 use numpy::ndarray::{Array, Ix1, Ix2};
@@ -30,8 +30,8 @@ pub struct Tree<const MAX_NODES: usize> {
 impl<const MAX_NODES: usize> Tree<MAX_NODES> {
     /// Create a new tree with just a root leaf node
     pub fn new(init_leaf_value: LeafVal, n_samples: usize) -> Self {
-        let mut split_var = [usize::MAX; MAX_NODES];
-        let mut split_val = [f64::NAN; MAX_NODES];
+        let split_var = [usize::MAX; MAX_NODES];
+        let split_val = [f64::NAN; MAX_NODES];
         let mut leaf_val = [0.0; MAX_NODES];
 
         // Set only root values
