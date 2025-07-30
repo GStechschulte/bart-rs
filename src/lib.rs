@@ -117,7 +117,7 @@ impl PySampler {
             y_data: y_data,
             alpha: settings.alpha,
             beta: settings.beta,
-            sigma: 1.0,
+            sigma: settings.init_leaf_std,
             n_trees: settings.n_trees,
             splitting_probs: Some(settings.split_prior.into()),
             min_samples_leaf: 2,

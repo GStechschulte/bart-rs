@@ -238,22 +238,22 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
 
         let left_value = {
             let dist = Normal::new(0.0, 1.0).unwrap();
-            let norm = dist.sample(rng);
+            let norm = dist.sample(rng) * context.sigma;
             if left_n == 0 {
                 norm // Or whatever the empty case logic is
             } else {
-                let mean_y = left_sum_y / context.y_data.len() as f64 / context.n_trees as f64;
+                let mean_y = left_sum_y / left_n as f64 / context.n_trees as f64;
                 mean_y + norm
             }
         };
 
         let right_value = {
             let dist = Normal::new(0.0, 1.0).unwrap();
-            let norm = dist.sample(rng);
+            let norm = dist.sample(rng) * context.sigma;
             if right_n == 0 {
                 norm // Or whatever the empty case logic is
             } else {
-                let mean_y = right_sum_y / context.y_data.len() as f64 / context.n_trees as f64;
+                let mean_y = right_sum_y / right_n as f64 / context.n_trees as f64;
                 mean_y + norm
             }
         };
@@ -277,6 +277,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         //     &right_indices,
         //     context.n_trees,
         // );
+        // println!("left: {}, right: {}", left_value, right_value);
 
         (left_value, right_value)
     }

@@ -250,8 +250,8 @@ class CompiledPyMCModel:
         """
         for array, storage in zip(self.logp_args, self.logp_fn_ptr.input_storage[1:]):
             # NOTE: np.copyto is the old implementation
-            # np.copyto(array, storage.storage[0])
-            self._fast_update(array, storage.storage[0])
+            np.copyto(array, storage.storage[0])
+            # self._fast_update(array, storage.storage[0])
 
     def _generate_logp_function(self):
         """Generate the final C-callable log probability function.

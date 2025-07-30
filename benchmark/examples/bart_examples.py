@@ -28,28 +28,33 @@ def test_propensity(args):
 
         t_pred = pm.Bernoulli("t_pred", p=p, observed=t_data, dims="obs")
 
-        idata = pm.sample(
-            tune=args.tune,
-            draws=args.draws,
-            chains=4,
-            step=[
-                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-            ],
-            random_seed=RANDOM_SEED,
-        )
+        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    az.plot_forest(
-        idata,
-        var_names=["p"],
-        coords={"p_dim_0": range(20)},
-        figsize=(10, 13),
-        combined=True,
-        kind="ridgeplot",
-        # model_names="BART",
-        r_hat=True,
-        ridgeplot_alpha=0.4,
-    )
-    plt.show()
+        # idata = pm.sample(
+        #     tune=args.tune,
+        #     draws=args.draws,
+        #     chains=4,
+        #     step=[
+        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        #     ],
+        #     random_seed=RANDOM_SEED,
+        # )
+        #
+    sum_trees, stats = step.astep(1)
+    print(sum_trees, stats)
+
+    # az.plot_forest(
+    #     idata,
+    #     var_names=["p"],
+    #     coords={"p_dim_0": range(20)},
+    #     figsize=(10, 13),
+    #     combined=True,
+    #     kind="ridgeplot",
+    #     # model_names="BART",
+    #     r_hat=True,
+    #     ridgeplot_alpha=0.4,
+    # )
+    # plt.show()
 
 
 def test_bikes(args):
@@ -73,12 +78,11 @@ def test_bikes(args):
     # )
     # plt.show()
 
-    # step.astep(1)
-    # sum_trees, stats = step.astep(1)
-
-    for i in range(250):
-        sum_trees, stats = step.astep(i)
-        print(f"iter: {i}, time: {stats[0].get('time')}")
+    sum_trees, stats = step.astep(1)
+    print(stats)
+    # for i in range(250):
+        # sum_trees, stats = step.astep(i)
+        # print(f"iter: {i}, time: {stats[0].get('time')}")
 
 
 def test_coal(args):
@@ -120,8 +124,8 @@ def test_coal(args):
         # )
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    sum_trees = step.astep(1)
-    print(sum_trees)
+    sum_trees, stats = step.astep(1)
+    print(stats)
 
     # for i in range(500):
     #     sum_trees, stats = step.astep(i)
@@ -131,7 +135,7 @@ def test_coal(args):
     # rates = idata.posterior["exp_mu"] / 4
     # rate_mean = rates.mean(dim=["draw", "chain"])
     # ax.plot(x_centers, rate_mean, "w", lw=3)
-    ax.plot(x_centers, sum_trees[0])
+    ax.plot(x_centers, sum_trees)
     # ax.plot(x_centers, y_data / 4, "k.")
     # az.plot_hdi(x_centers, rates, smooth=False)
     # az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})

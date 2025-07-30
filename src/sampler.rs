@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::rc::Rc;
 
+use numpy::ndarray::{Array, Array1, Ix1};
 use rand::Rng;
 use rand_distr::Distribution;
 use rand_distr::weighted::WeightedIndex;
@@ -43,16 +44,20 @@ where
         // );
 
         let n_particles = 20;
-        let mut updated_trees = Vec::with_capacity(context.n_trees);
+        let mut updated_trees: Vec<Tree<MAX_NODES>> = Vec::with_capacity(context.n_trees);
         // let mut trees = state.ensemble_trees;
         // println!(
         //     "init ensemble predictions: {:?}",
         //     state.ensemble_predictions
         // );
         let mut current_total_ensemble_preds = state.ensemble_predictions;
+        let original_targets = context.y_data.clone();
         let mut tree_context = context.clone();
 
+        // println!("init_sum_trees: {:?}", current_total_ensemble_preds);
+
         for tree_idx in 0..context.n_trees {
+            // for tree_idx in 0..1 {
             let current_tree = &state.ensemble_trees[tree_idx];
 
             // println!(
@@ -69,21 +74,25 @@ where
 
             // Calculate residuals by removing current tree's contribution from the *current total ensemble prediction*.
             let current_tree_prediction = current_tree.predict_training();
-            let residuals = current_total_ensemble_preds - &current_tree_prediction;
-            tree_context.y_data = residuals;
+            let residuals = &current_total_ensemble_preds - &current_tree_prediction;
+            // println!("residual: {:?}", residuals);
+
+            tree_context.y_data = current_total_ensemble_preds;
 
             // println!("current_tree_prediction: {:?}", current_tree_prediction);
             // println!("residuals: {:?}", residuals);
 
             // Run particle Gibbs step for this tree
             let tree_start = std::time::Instant::now();
-            let new_tree = self.step_particles(rng, context, n_particles, tree_idx);
+            let new_tree = self.step_particles(rng, context, &residuals, n_particles, tree_idx);
             let tree_duration = tree_start.elapsed();
 
             let new_tree_predictions = new_tree.predict_training();
 
             // Update the total ensemble predictions directly.
-            current_total_ensemble_preds = &tree_context.y_data + &new_tree_predictions;
+            current_total_ensemble_preds = &residuals + &new_tree_predictions;
+
+            // println!("Ensemble predictions: {:?}", current_total_ensemble_preds);
 
             // println!(
             //     "✅ Tree {} completed in {:?} - New size: {}, leaves: {}, new_tree_preds: {:?}, predictions: {:?}",
@@ -112,6 +121,7 @@ where
         &self,
         rng: &mut impl Rng,
         context: &U::Context,
+        residuals: &Array<f64, Ix1>,
         n_particles: usize,
         tree_idx: usize,
     ) -> Tree<MAX_NODES> {
@@ -122,9 +132,10 @@ where
         // );
 
         // Initialize particles: include current tree + (n_particles - 1) new particles
+        let init_leaf_value = context.y_data.mean().unwrap() / context.n_trees as f64;
         let mut particles: Vec<Particle<MAX_NODES>> = (0..n_particles)
             .map(|i| {
-                let particle = Rc::new(Tree::new(0.0, context.y_data.len()));
+                let particle = Rc::new(Tree::new(init_leaf_value, context.y_data.len()));
                 // println!(
                 //     "    Particle {}: initialized with Rc count {}",
                 //     i,
@@ -193,7 +204,7 @@ where
             let weights: Vec<f64> = particles
                 .iter()
                 .map(|particle| {
-                    let predictions = &context.y_data + particle.predict_training();
+                    let predictions = residuals + particle.predict_training();
                     let weight = self.weight.log_weight(&predictions);
                     weight
                 })
@@ -202,6 +213,7 @@ where
             // println!("    📊 Particle weights: {:?}", weights);
 
             let norm_weights = normalize_weights(&weights);
+
             let ancestors: Vec<usize> = R::resample(rng, norm_weights).collect();
 
             // println!("    🔄 Resampling ancestors: {:?}", ancestors);
@@ -226,18 +238,21 @@ where
         // self.print_final_debug_info(&particles);
 
         // Final selection phase
+        // TODO: We should store these weights somewhere instead of computing again
         let final_weights: Vec<f64> = particles
             .iter()
             .map(|particle| {
-                let predictions = &context.y_data + particle.predict_training();
+                let predictions = residuals + particle.predict_training();
                 let weight = self.weight.log_weight(&predictions);
                 weight
             })
             .collect();
 
-        // println!("  📊 Final particle weights: {:?}", final_weights);
+        // println!(" 📊 Final particle weights: {:?}", final_weights);
 
         let norm_weights: Vec<f64> = normalize_weights(&final_weights).collect();
+        // println!("normalized weights: {:?}", norm_weights);
+
         let dist = WeightedIndex::new(norm_weights.clone()).unwrap();
         let selected_idx = dist.sample(rng);
 

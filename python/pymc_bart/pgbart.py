@@ -123,6 +123,7 @@ class PGBART(ArrayStepShared):
         self.leaf_sd = np.ones(self.leaves_shape)
 
         y_unique = np.unique(self.bart.Y)
+        print(y_unique)
         if y_unique.size == 2 and np.all(y_unique == [0, 1]):
             self.leaf_sd *= 3 / self.m**0.5
         else:
@@ -147,20 +148,20 @@ class PGBART(ArrayStepShared):
         # elif self.bart_response == "gp":
         #     settings = PyBartSettings.Gp()
 
-        self._sum_of_trees_buffer = np.zeros(self.bart.Y.shape[0], dtype=np.float64)
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
         max_nodes_per_tree = 2 ** (max_depth + 1) - 1
 
         split_rules = list(self.bart.split_rules.values())
 
-        print(f"X: {self.X}")
-        print(f"y: {self.bart.Y}")
+        # print(f"X: {self.X}")
+        # print(f"y: {self.bart.Y}")
         print(f"init_leaf_value: {init_leaf_value}")
         print(f"split_rules: {split_rules}")
         print(f"response_rule: {self.bart.response}")
         print(f"alpha vector: {self.alpha_vec}")
         print(f"splitting probability: {splitting_probs}")
         print(f"alpha: {self.bart.alpha}, beta: {self.bart.beta}")
+        print(f"self.leaf_sd: {self.leaf_sd}")
         print(f"max_depth: {max_depth}")
         print(f"max_nodes_per_tree: {max_nodes_per_tree}")
 
