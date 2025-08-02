@@ -1,5 +1,3 @@
-//! Builder pattern for constructing BART samplers with static dispatch
-
 use numpy::Ix2;
 use numpy::ndarray::{Array, Ix1};
 use pyo3::PyResult;
@@ -16,96 +14,98 @@ use crate::splitting::{ContinuousSplit, SplitRules};
 use crate::update::{BARTWeighter, TreeContext, TreeUpdater};
 
 // Type aliases for different node capacities using concrete ResponseStrategy
+type Sampler63 = ParticleGibbsSampler<
+    63,
+    TreeUpdater<GaussianResponseStrategy>,
+    BARTWeighter,
+    SystematicResampling,
+>;
 type Sampler127 = ParticleGibbsSampler<
     127,
     TreeUpdater<GaussianResponseStrategy>,
     BARTWeighter,
     SystematicResampling,
 >;
-type Sampler255 = ParticleGibbsSampler<
-    255,
-    TreeUpdater<GaussianResponseStrategy>,
-    BARTWeighter,
-    SystematicResampling,
->;
-type Sampler511 = ParticleGibbsSampler<
-    511,
-    TreeUpdater<GaussianResponseStrategy>,
-    BARTWeighter,
-    SystematicResampling,
->;
-type Sampler1023 = ParticleGibbsSampler<
-    1023,
-    TreeUpdater<GaussianResponseStrategy>,
-    BARTWeighter,
-    SystematicResampling,
->;
-type Sampler2047 = ParticleGibbsSampler<
-    2047,
-    TreeUpdater<GaussianResponseStrategy>,
-    BARTWeighter,
-    SystematicResampling,
->;
+// type Sampler255 = ParticleGibbsSampler<
+//     255,
+//     TreeUpdater<GaussianResponseStrategy>,
+//     BARTWeighter,
+//     SystematicResampling,
+// >;
+// type Sampler511 = ParticleGibbsSampler<
+//     511,
+//     TreeUpdater<GaussianResponseStrategy>,
+//     BARTWeighter,
+//     SystematicResampling,
+// >;
+// type Sampler1023 = ParticleGibbsSampler<
+//     1023,
+//     TreeUpdater<GaussianResponseStrategy>,
+//     BARTWeighter,
+//     SystematicResampling,
+// >;
+// type Sampler2047 = ParticleGibbsSampler<
+//     2047,
+//     TreeUpdater<GaussianResponseStrategy>,
+//     BARTWeighter,
+//     SystematicResampling,
+// >;
 
 /// The complete BART sampler with state
 pub enum BartSampler {
+    Nodes63 {
+        sampler: Sampler63,
+        state: BartState<63>,
+    },
     Nodes127 {
         sampler: Sampler127,
         state: BartState<127>,
     },
-    Nodes255 {
-        sampler: Sampler255,
-        state: BartState<255>,
-    },
-    Nodes511 {
-        sampler: Sampler511,
-        state: BartState<511>,
-    },
-    Nodes1023 {
-        sampler: Sampler1023,
-        state: BartState<1023>,
-    },
-    Nodes2047 {
-        sampler: Sampler2047,
-        state: BartState<2047>,
-    },
+    // Nodes255 {
+    //     sampler: Sampler255,
+    //     state: BartState<255>,
+    // },
+    // Nodes511 {
+    //     sampler: Sampler511,
+    //     state: BartState<511>,
+    // },
+    // Nodes1023 {
+    //     sampler: Sampler1023,
+    //     state: BartState<1023>,
+    // },
+    // Nodes2047 {
+    //     sampler: Sampler2047,
+    //     state: BartState<2047>,
+    // },
 }
 
 impl BartSampler {
     /// Execute a single sampling step
     pub fn step(&mut self, rng: &mut SmallRng, context: &TreeContext) -> &Array<f64, Ix1> {
         match self {
+            BartSampler::Nodes63 { sampler, state } => {
+                sampler.step_trees(rng, state, context);
+                &state.ensemble_predictions
+            }
             BartSampler::Nodes127 { sampler, state } => {
-                // Temporarily move state out, transform it, put it back
-                let dummy = BartState::new(Vec::new(), Array::zeros(0));
-                let old_state = std::mem::replace(state, dummy);
-                *state = sampler.step(rng, old_state, context);
-                &state.ensemble_predictions // Return reference - no clone!
-            }
-            BartSampler::Nodes255 { sampler, state } => {
-                let dummy = BartState::new(Vec::new(), Array::zeros(0));
-                let old_state = std::mem::replace(state, dummy);
-                *state = sampler.step(rng, old_state, context);
+                sampler.step_trees(rng, state, context);
                 &state.ensemble_predictions
-            }
-            BartSampler::Nodes511 { sampler, state } => {
-                let dummy = BartState::new(Vec::new(), Array::zeros(0));
-                let old_state = std::mem::replace(state, dummy);
-                *state = sampler.step(rng, old_state, context);
-                &state.ensemble_predictions
-            }
-            BartSampler::Nodes1023 { sampler, state } => {
-                let dummy = BartState::new(Vec::new(), Array::zeros(0));
-                let old_state = std::mem::replace(state, dummy);
-                *state = sampler.step(rng, old_state, context);
-                &state.ensemble_predictions
-            }
-            BartSampler::Nodes2047 { sampler, state } => {
-                let dummy = BartState::new(Vec::new(), Array::zeros(0));
-                let old_state = std::mem::replace(state, dummy);
-                *state = sampler.step(rng, old_state, context);
-                &state.ensemble_predictions
-            }
+            } // BartSampler::Nodes255 { sampler, state } => {
+              //     sampler.step_trees(rng, state, context);
+              //     &state.ensemble_predictions
+              // }
+              // BartSampler::Nodes511 { sampler, state } => {
+              //     sampler.step_trees(rng, state, context);
+              //     &state.ensemble_predictions
+              // }
+              // BartSampler::Nodes1023 { sampler, state } => {
+              //     sampler.step_trees(rng, state, context);
+              //     &state.ensemble_predictions
+              // }
+              // BartSampler::Nodes2047 { sampler, state } => {
+              //     sampler.step_trees(rng, state, context);
+              //     &state.ensemble_predictions
+              // }
         }
     }
 }
@@ -285,66 +285,108 @@ impl BartSamplerBuilder {
         let n_samples = y_data.len();
 
         match max_nodes {
-            127 => {
+            63 => {
+                // Updated constructor: (update, weight, resample, n_particles, n_trees, n_samples)
                 let sampler = ParticleGibbsSampler::new(
-                    sampler_components.0,
-                    sampler_components.1,
-                    sampler_components.2,
+                    sampler_components.0, // update
+                    sampler_components.1, // weight
+                    sampler_components.2, // resample
+                );
+                let tree_ensemble: Vec<Tree<63>> = (0..n_trees)
+                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+                    .collect();
+
+                let state = BartState::new(tree_ensemble, init_predictions);
+
+                Ok(BartSampler::Nodes63 { sampler, state })
+            }
+            127 => {
+                // Updated constructor: (update, weight, resample, n_particles, n_trees, n_samples)
+                let sampler = ParticleGibbsSampler::new(
+                    sampler_components.0, // update
+                    sampler_components.1, // weight
+                    sampler_components.2, // resample
                 );
                 let tree_ensemble: Vec<Tree<127>> = (0..n_trees)
                     .map(|_| Tree::new(init_leaf_value_rs, n_samples))
                     .collect();
+
                 let state = BartState::new(tree_ensemble, init_predictions);
+
                 Ok(BartSampler::Nodes127 { sampler, state })
             }
-            255 => {
-                let sampler = ParticleGibbsSampler::new(
-                    sampler_components.0,
-                    sampler_components.1,
-                    sampler_components.2,
-                );
-                let tree_ensemble: Vec<Tree<255>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
-                let state = BartState::new(tree_ensemble, init_predictions);
-                Ok(BartSampler::Nodes255 { sampler, state })
-            }
-            511 => {
-                let sampler = ParticleGibbsSampler::new(
-                    sampler_components.0,
-                    sampler_components.1,
-                    sampler_components.2,
-                );
-                let tree_ensemble: Vec<Tree<511>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
-                let state = BartState::new(tree_ensemble, init_predictions);
-                Ok(BartSampler::Nodes511 { sampler, state })
-            }
-            1023 => {
-                let sampler = ParticleGibbsSampler::new(
-                    sampler_components.0,
-                    sampler_components.1,
-                    sampler_components.2,
-                );
-                let tree_ensemble: Vec<Tree<1023>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
-                let state = BartState::new(tree_ensemble, init_predictions);
-                Ok(BartSampler::Nodes1023 { sampler, state })
-            }
-            2047 => {
-                let sampler = ParticleGibbsSampler::new(
-                    sampler_components.0,
-                    sampler_components.1,
-                    sampler_components.2,
-                );
-                let tree_ensemble: Vec<Tree<2047>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
-                let state = BartState::new(tree_ensemble, init_predictions);
-                Ok(BartSampler::Nodes2047 { sampler, state })
-            }
+            // 255 => {
+            //     let sampler = ParticleGibbsSampler::new(
+            //         sampler_components.0,
+            //         sampler_components.1,
+            //         sampler_components.2,
+            //     );
+            //     let tree_ensemble: Vec<Tree<255>> = (0..n_trees)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let particle_pool: Vec<Tree<255>> = (0..n_particles)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let state = BartState::new(tree_ensemble, init_predictions);
+
+            //     Ok(BartSampler::Nodes255 { sampler, state })
+            // }
+            // 511 => {
+            //     let sampler = ParticleGibbsSampler::new(
+            //         sampler_components.0,
+            //         sampler_components.1,
+            //         sampler_components.2,
+            //     );
+            //     let tree_ensemble: Vec<Tree<511>> = (0..n_trees)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let particle_pool: Vec<Tree<511>> = (0..n_particles)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let state = BartState::new(tree_ensemble, init_predictions);
+
+            //     Ok(BartSampler::Nodes511 { sampler, state })
+            // }
+            // 1023 => {
+            //     let sampler = ParticleGibbsSampler::new(
+            //         sampler_components.0,
+            //         sampler_components.1,
+            //         sampler_components.2,
+            //     );
+            //     let tree_ensemble: Vec<Tree<1023>> = (0..n_trees)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let particle_pool: Vec<Tree<1023>> = (0..n_particles)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let state = BartState::new(tree_ensemble, init_predictions);
+
+            //     Ok(BartSampler::Nodes1023 { sampler, state })
+            // }
+            // 2047 => {
+            //     let sampler = ParticleGibbsSampler::new(
+            //         sampler_components.0,
+            //         sampler_components.1,
+            //         sampler_components.2,
+            //     );
+            //     let tree_ensemble: Vec<Tree<2047>> = (0..n_trees)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let particle_pool: Vec<Tree<2047>> = (0..n_particles)
+            //         .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+            //         .collect();
+
+            //     let state = BartState::new(tree_ensemble, init_predictions);
+
+            //     Ok(BartSampler::Nodes2047 { sampler, state })
+            // }
             _ => Err(PyValueError::new_err(format!(
                 "Unsupported MAX_NODES: {}. Use 127, 255, 511, 1023, or 2047",
                 max_nodes

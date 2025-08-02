@@ -14,7 +14,7 @@ use crate::update::{MutationDecision, TreeContext, TreeProposal, Update, Weight}
 pub struct ParticleGibbsSampler<const MAX_NODES: usize, U, W, R> {
     update: U,
     weight: W,
-    resample: R,
+    _resample: R,
 }
 
 impl<const MAX_NODES: usize, U, W, R> ParticleGibbsSampler<MAX_NODES, U, W, R>
@@ -27,37 +27,39 @@ where
         Self {
             update,
             weight,
-            resample,
+            _resample: resample,
         }
     }
 
-    pub fn step(
+    // Mutates State in-place
+    pub fn step_trees(
         &self,
         rng: &mut impl Rng,
-        state: BartState<MAX_NODES>,
+        state: &mut BartState<MAX_NODES>,
         context: &U::Context,
-    ) -> BartState<MAX_NODES> {
+    ) {
         let start = std::time::Instant::now();
         // println!(
         //     "\n🚀 Starting Particle Gibbs step for {} trees",
         //     context.n_trees
         // );
 
+        // TODO: Remove this
+        let init_leaf_value = context.y_data.mean().unwrap();
         let n_particles = 20;
-        let mut updated_trees: Vec<Tree<MAX_NODES>> = Vec::with_capacity(context.n_trees);
+
         // let mut trees = state.ensemble_trees;
         // println!(
         //     "init ensemble predictions: {:?}",
         //     state.ensemble_predictions
         // );
-        let mut current_total_ensemble_preds = state.ensemble_predictions;
-        let original_targets = context.y_data.clone();
-        let mut tree_context = context.clone();
+        // let mut current_total_ensemble_preds = state.ensemble_predictions;
+        // let original_targets = context.y_data.clone();
+        // let mut tree_context = context.clone();
 
         // println!("init_sum_trees: {:?}", current_total_ensemble_preds);
 
         for tree_idx in 0..context.n_trees {
-            // for tree_idx in 0..1 {
             let current_tree = &state.ensemble_trees[tree_idx];
 
             // println!(
@@ -73,24 +75,32 @@ where
             // );
 
             // Calculate residuals by removing current tree's contribution from the *current total ensemble prediction*.
-            let current_tree_prediction = current_tree.predict_training();
-            let residuals = &current_total_ensemble_preds - &current_tree_prediction;
-            // println!("residual: {:?}", residuals);
+            // let current_tree_prediction = current_tree.predict_training();
+            // let residuals = &current_total_ensemble_preds - &current_tree_prediction;
+            let residuals = &state.ensemble_predictions - &current_tree.predict_training();
 
-            tree_context.y_data = current_total_ensemble_preds;
+            // tree_context.predictions = current_total_ensemble_preds;
 
             // println!("current_tree_prediction: {:?}", current_tree_prediction);
             // println!("residuals: {:?}", residuals);
 
             // Run particle Gibbs step for this tree
+
             let tree_start = std::time::Instant::now();
-            let new_tree = self.step_particles(rng, context, &residuals, n_particles, tree_idx);
+            let new_tree = self.step_particles(
+                rng,
+                context,
+                &state.ensemble_predictions,
+                &residuals,
+                n_particles,
+                tree_idx,
+            );
             let tree_duration = tree_start.elapsed();
 
             let new_tree_predictions = new_tree.predict_training();
 
             // Update the total ensemble predictions directly.
-            current_total_ensemble_preds = &residuals + &new_tree_predictions;
+            state.ensemble_predictions = &residuals + &new_tree_predictions;
 
             // println!("Ensemble predictions: {:?}", current_total_ensemble_preds);
 
@@ -104,23 +114,24 @@ where
             //     current_total_ensemble_preds
             // );
 
-            updated_trees.push(new_tree); // Add the new tree to our
+            state.ensemble_trees[tree_idx] = new_tree;
         }
 
         let duration = start.elapsed();
         // println!("🏁 Particle Gibbs step completed in {:?}", duration);
 
-        BartState {
-            ensemble_trees: updated_trees,
-            ensemble_predictions: current_total_ensemble_preds,
-        }
+        // BartState {
+        //     ensemble_trees: updated_trees,
+        //     ensemble_predictions: current_total_ensemble_preds,
+        // }
     }
 
-    /// Runs particle Gibbs for a single tree position in the ensemble
+    // Runs particle Gibbs for a single tree position in the ensemble
     fn step_particles(
         &self,
         rng: &mut impl Rng,
         context: &U::Context,
+        ensemble_predictions: &Array<f64, Ix1>,
         residuals: &Array<f64, Ix1>,
         n_particles: usize,
         tree_idx: usize,
@@ -158,51 +169,62 @@ where
             // self.print_iteration_debug_info(&particles, &queues, iteration_count);
 
             // Process each particle
-            particles.iter_mut().enumerate().for_each(|(i, particle)| {
-                if let Some(node_idx) = queues.pop_front(i) {
-                    // println!(
-                    //     "    Processing particle {}: attempting to grow node {} (Rc count: {})",
-                    //     i,
-                    //     node_idx,
-                    //     Rc::strong_count(particle)
-                    // );
+            particles
+                .iter_mut()
+                // .skip(1) // Skip the first particle
+                .enumerate()
+                .for_each(|(i, particle)| {
+                    if let Some(node_idx) = queues.pop_front(i) {
+                        // println!(
+                        //     "    Processing particle {}: attempting to grow node {} (Rc count: {})",
+                        //     i,
+                        //     node_idx,
+                        //     Rc::strong_count(particle)
+                        // );
 
-                    match self.update.should_update(rng, particle, node_idx, context) {
-                        MutationDecision::Accept(proposal) => {
-                            // println!(
-                            //     "      ✅ Particle {}: Mutation ACCEPTED for node {} -> split_var: {}, split_val: {:.3}",
-                            //     i, node_idx, proposal.split_var, proposal.split_val
-                            // );
+                        match self.update.should_update(
+                            rng,
+                            particle,
+                            node_idx,
+                            ensemble_predictions,
+                            context,
+                        ) {
+                            MutationDecision::Accept(proposal) => {
+                                // println!(
+                                //     "      ✅ Particle {}: Mutation ACCEPTED for node {} -> split_var: {}, split_val: {:.3}",
+                                //     i, node_idx, proposal.split_var, proposal.split_val
+                                // );
 
-                            // Apply mutation and update particle weight
-                            let tree_mut = Rc::make_mut(particle);
-                            self.update.apply_update(tree_mut, &proposal, context);
+                                // Apply mutation and update particle weight
+                                let tree_mut = Rc::make_mut(particle);
+                                self.update.apply_update(tree_mut, &proposal, context);
 
-                            // Add children to queue
-                            let left_child = 2 * node_idx + 1;
-                            let right_child = 2 * node_idx + 2;
-                            queues.push_back(i, left_child);
-                            queues.push_back(i, right_child);
+                                // Add children to queue
+                                let left_child = 2 * node_idx + 1;
+                                let right_child = 2 * node_idx + 2;
+                                queues.push_back(i, left_child);
+                                queues.push_back(i, right_child);
 
-                            // println!(
-                            //     "      📝 Added children nodes {} and {} to particle {} queue",
-                            //     left_child, right_child, i
-                            // );
-                        }
-                        MutationDecision::Reject => {
-                            // println!(
-                            //     "      ❌ Particle {}: Mutation REJECTED for node {} (removed from queue)",
-                            //     i, node_idx
-                            // );
+                                // println!(
+                                //     "      📝 Added children nodes {} and {} to particle {} queue",
+                                //     left_child, right_child, i
+                                // );
+                            }
+                            MutationDecision::Reject => {
+                                // println!(
+                                //     "      ❌ Particle {}: Mutation REJECTED for node {} (removed from queue)",
+                                //     i, node_idx
+                                // );
+                            }
                         }
                     }
-                }
-            });
+                });
 
             // After growing each particle for one growth iteration
             // compute weights, normalize, and resample the particles
             let weights: Vec<f64> = particles
                 .iter()
+                // .skip(1)
                 .map(|particle| {
                     let predictions = residuals + particle.predict_training();
                     let weight = self.weight.log_weight(&predictions);
@@ -211,18 +233,17 @@ where
                 .collect();
 
             // println!("    📊 Particle weights: {:?}", weights);
-
             let norm_weights = normalize_weights(&weights);
-
             let ancestors: Vec<usize> = R::resample(rng, norm_weights).collect();
-
             // println!("    🔄 Resampling ancestors: {:?}", ancestors);
 
+            // TODO: I think this is wrong because we only initialized N - 1 queues
+            // but it is possible to resample the skipped particle (see resampling below)
             queues.resample(&ancestors);
 
             particles = ancestors
                 .into_iter()
-                .map(|idx| Rc::clone(&particles[idx]))
+                .map(|idx| Rc::clone(&particles[idx])) // Resample N particles
                 .collect();
 
             // Debug: Print state after processing
@@ -276,69 +297,67 @@ where
         final_tree
     }
 
-    /// Print debugging information at the start of each iteration
-    fn print_iteration_debug_info(
-        &self,
-        particles: &[Particle<MAX_NODES>],
-        queues: &ParticleQueues,
-        iteration: usize,
-    ) {
-        println!("🔍 Iteration {} State:", iteration);
+    // /// Print debugging information at the start of each iteration
+    // fn print_iteration_debug_info(&self, tree_idx: usize, iteration: usize) {
+    //     println!("🔍 Tree {} - Iteration {} State:", tree_idx + 1, iteration);
 
-        for (i, particle) in particles.iter().enumerate() {
-            let available_nodes = queues.get_queue_contents(i).unwrap_or_default();
-            let rc_count = Rc::strong_count(particle);
-            let tree_size = particle.size;
-            let total_leaves = particle.get_leaf_indices();
+    //     for (i, particle) in self.particle_pool.particles().iter().enumerate() {
+    //         let rc_count = Rc::strong_count(particle);
+    //         let tree_size = particle.size;
+    //         let total_leaves = particle.get_leaf_indices();
 
-            println!(
-                "  Particle {}: Rc={}, TreeSize={}, TotalLeaves={}, ExpandableNodes={:?}",
-                i,
-                rc_count,
-                tree_size,
-                total_leaves.len(),
-                available_nodes
-            );
-        }
-    }
+    //         println!(
+    //             "  Particle {}: Rc={}, TreeSize={}, TotalLeaves={}",
+    //             i,
+    //             rc_count,
+    //             tree_size,
+    //             total_leaves.len(),
+    //         );
+    //     }
+    // }
 
-    /// Print debugging information after processing each iteration
-    fn print_post_iteration_debug_info(
-        &self,
-        particles: &[Particle<MAX_NODES>],
-        queues: &ParticleQueues,
-    ) {
-        let total_expandable: usize = (0..particles.len()).map(|i| queues.queue_len(i)).sum();
+    // /// Print debugging information after processing each iteration
+    // fn print_post_iteration_debug_info(&mut self) {
+    //     let total_expandable: usize = self
+    //         .particle_pool
+    //         .queues_mut()
+    //         .iter()
+    //         .map(|q| q.len())
+    //         .sum();
 
-        println!(
-            "  📊 Total expandable nodes remaining: {}",
-            total_expandable
-        );
+    //     println!(
+    //         "  📊 Total expandable nodes remaining: {}",
+    //         total_expandable
+    //     );
 
-        // Show which particles still have expandable nodes
-        let active_particles: Vec<usize> = (0..particles.len())
-            .filter(|&i| !queues.is_queue_empty(i))
-            .collect();
+    //     // Show which particles still have expandable nodes
+    //     let active_particles: Vec<usize> = self
+    //         .particle_pool
+    //         .queues_mut()
+    //         .iter()
+    //         .enumerate()
+    //         .filter_map(|(i, q)| if !q.is_empty() { Some(i) } else { None })
+    //         .collect();
 
-        if !active_particles.is_empty() {
-            println!("  🔄 Active particles: {:?}", active_particles);
-        }
-    }
+    //     if !active_particles.is_empty() {
+    //         println!("  🔄 Active particles: {:?}", active_particles);
+    //     }
+    // }
 
-    /// Print final debugging information
-    fn print_final_debug_info(&self, particles: &[Particle<MAX_NODES>]) {
-        println!("📈 Final Particle Summary:");
-        for (i, particle) in particles.iter().enumerate() {
-            let rc_count = Rc::strong_count(particle);
-            let tree_size = particle.size;
-            let leaf_count = particle.get_leaf_indices().len();
+    // /// Print final debugging information
+    // fn print_final_debug_info(&self) {
+    //     println!("📈 Final Particle Summary:");
+    //     for (i, particle) in self.particle_pool.particles().iter().enumerate() {
+    //         let rc_count = Rc::strong_count(particle);
+    //         let tree_size = particle.size;
+    //         let leaf_count = particle.get_leaf_indices().len();
 
-            println!(
-                "  Particle {}: Rc={}, FinalSize={}, FinalLeaves={}",
-                i, rc_count, tree_size, leaf_count
-            );
-        }
-    }
+    //         println!(
+    //             "  Particle {}: Rc={}, FinalSize={}, FinalLeaves={}",
+    //             i, rc_count, tree_size, leaf_count
+    //         );
+    //     }
+    // }
 }
 
 pub fn normalize_weights(weights: &[f64]) -> impl Iterator<Item = f64> + '_ {
@@ -440,5 +459,20 @@ impl ParticleQueues {
             .get(particle_idx)
             .map(|q| q.is_empty())
             .unwrap_or(true)
+    }
+}
+
+pub fn normalize_weights_inplace(weights: &mut [f64]) {
+    let max_log_weight = weights.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+    // Convert to probabilities
+    for w in weights.iter_mut() {
+        *w = (*w - max_log_weight).exp();
+    }
+
+    // Normalize
+    let sum: f64 = weights.iter().sum();
+    for w in weights.iter_mut() {
+        *w /= sum;
     }
 }

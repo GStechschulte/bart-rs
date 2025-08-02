@@ -14,7 +14,7 @@ def test_propensity(args):
     nhefs_df = pd.read_csv(pm.get_data("nhefs.csv"))
 
     X = nhefs_df.astype("float64").copy()
-    y = nhefs_df["outcome"].astype("float64")
+    # y = nhefs_df["outcome"].astype("float64")
     t = nhefs_df["trt"].astype("float64")
     X = X.drop(["trt", "outcome"], axis=1)
 
@@ -59,6 +59,9 @@ def test_propensity(args):
 
 def test_bikes(args):
     bikes = pd.read_csv(pm.get_data("bikes.csv"))
+
+    # bikes.to_parquet("bikes.parquet")
+
     X = bikes[["hour", "temperature", "humidity", "workingday"]]
     Y = bikes["count"]
 
@@ -66,6 +69,16 @@ def test_bikes(args):
         alpha = pm.Exponential("alpha", 1.0)
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
+
+        # idata = pm.sample(
+        #     tune=args.tune,
+        #     draws=args.draws,
+        #     chains=4,
+        #     step=[
+        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        #     ],
+        #     random_seed=RANDOM_SEED,
+        # )
 
         step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
@@ -113,35 +126,35 @@ def test_coal(args):
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
 
-        # idata = pm.sample(
-        #     tune=args.tune,
-        #     draws=args.draws,
-        #     chains=4,
-        #     step=[
-        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #     ],
-        #     random_seed=RANDOM_SEED,
-        # )
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=4,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-    sum_trees, stats = step.astep(1)
-    print(stats)
+    # sum_trees, stats = step.astep(1)
+    # print(stats)
 
     # for i in range(500):
     #     sum_trees, stats = step.astep(i)
     #     print(f"iter: {i}, time: {stats[0].get('time')}")
 
     _, ax = plt.subplots(figsize=(10, 6))
-    # rates = idata.posterior["exp_mu"] / 4
-    # rate_mean = rates.mean(dim=["draw", "chain"])
-    # ax.plot(x_centers, rate_mean, "w", lw=3)
-    ax.plot(x_centers, sum_trees)
-    # ax.plot(x_centers, y_data / 4, "k.")
-    # az.plot_hdi(x_centers, rates, smooth=False)
-    # az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
-    # ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
-    # ax.set_xlabel("years")
-    # ax.set_ylabel("rate")
+    rates = idata.posterior["exp_mu"] / 4
+    rate_mean = rates.mean(dim=["draw", "chain"])
+    ax.plot(x_centers, rate_mean, "w", lw=3)
+    # ax.plot(x_centers, sum_trees)
+    ax.plot(x_centers, y_data / 4, "k.")
+    az.plot_hdi(x_centers, rates, smooth=False)
+    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0})
+    ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
+    ax.set_xlabel("years")
+    ax.set_ylabel("rate")
     plt.show()
 
 

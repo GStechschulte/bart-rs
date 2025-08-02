@@ -1,8 +1,4 @@
-use std::{
-    f64,
-    rc::Rc,
-    usize::{self},
-};
+use std::{collections::VecDeque, f64, rc::Rc, usize};
 
 use numpy::ndarray::{Array, Ix1, Ix2};
 
@@ -148,26 +144,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
 
         self.size = self.size.max(right_child + 1);
 
-        // // Resize vectors to accommodate the new indices
-        // let required_size = right_child + 1;
-        // self.split_var.resize(required_size, usize::MAX);
-        // self.split_val.resize(required_size, f64::NAN);
-        // self.leaf_val.resize(required_size, 0.0);
-
-        // // Now set values at the correct indices
-        // self.split_var[leaf_idx] = split_var;
-        // self.split_val[leaf_idx] = split_val;
-        // self.leaf_val[leaf_idx] = f64::NAN;
-
-        // self.split_var[left_child] = usize::MAX;
-        // self.split_val[left_child] = f64::NAN;
-        // self.leaf_val[left_child] = left_val;
-
-        // self.split_var[right_child] = usize::MAX;
-        // self.split_val[right_child] = f64::NAN;
-        // self.leaf_val[right_child] = right_val;
-
-        // self.size = self.size.max(required_size);
+        // NOTE: Old implementation below
 
         // self.split_var[leaf_idx] = split_var;
         // self.split_val[leaf_idx] = split_val;

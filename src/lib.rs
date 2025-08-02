@@ -25,7 +25,7 @@ use rand::rngs::SmallRng;
 pub type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
 #[pyclass]
-#[derive(Clone)] // Clone is useful for passing settings around
+#[derive(Clone, Debug)]
 pub struct PyBartSettings {
     init_leaf_value: f64,
     init_leaf_std: f64,
@@ -112,6 +112,7 @@ impl PySampler {
             .with_bart_params(settings.alpha, settings.beta, 1.0)
             .build(&x_data, &y_data, logp_func)?;
 
+        // TODO: mutable state should not really be in the TreeContext???
         let context = TreeContext {
             x_data: x_data,
             y_data: y_data,

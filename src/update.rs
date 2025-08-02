@@ -11,7 +11,7 @@ use crate::{
     splitting::SplitRules,
 };
 
-/// Represents the decision outcome for update proposals
+/// Represents the decision outcome for mutation (update) proposals
 #[derive(Clone, Debug)]
 pub enum MutationDecision {
     /// Mutation should proceed with the given proposal
@@ -36,11 +36,11 @@ pub struct TreeProposal {
     pub affected_samples: Vec<usize>,
 }
 
-/// Contains relevant parameters needed for SMC update steps.
+/// Contains relevant parameters and data needed for Particle Gibbs update steps.
 #[derive(Clone, Debug)]
 pub struct TreeContext {
     pub x_data: Array<f64, Ix2>,
-    pub y_data: Array1<f64>,
+    pub y_data: Array<f64, Ix1>,
     pub alpha: f64,
     pub beta: f64,
     pub sigma: f64,
@@ -55,7 +55,7 @@ pub struct TreeUpdater<R> {
     /// Split strategies per feature (index = feature_idx)
     split_strategies: Vec<SplitRules>,
     /// Response strategy for leaf value generation
-    response_strategy: R,
+    _response_strategy: R,
 }
 
 impl<R: ResponseStrategy> TreeUpdater<R> {
@@ -63,7 +63,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
     pub fn new(split_strategies: Vec<SplitRules>, response_strategy: R) -> Self {
         Self {
             split_strategies,
-            response_strategy,
+            _response_strategy: response_strategy,
         }
     }
 
@@ -75,7 +75,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
     ) -> Self {
         Self {
             split_strategies: vec![split_strategy; n_features],
-            response_strategy,
+            _response_strategy: response_strategy,
         }
     }
 }
@@ -84,16 +84,17 @@ pub trait Update<const MAX_NODES: usize> {
     type Proposal;
     type Context;
 
-    /// Evaluate mutation feasibility for a node of the given particle.
+    /// Evaluate mutation feasibility of a Particle at this node given this context.
     fn should_update(
         &self,
         rng: &mut impl Rng,
         particle: &Particle<MAX_NODES>,
         node_idx: usize,
+        ensemble_predictions: &Array<f64, Ix1>,
         context: &Self::Context,
     ) -> MutationDecision;
 
-    /// Apply a mutation proposal to a particle.
+    /// Mutate a Particle with this proposal and context.
     fn apply_update(
         &self,
         particle: &mut Tree<MAX_NODES>,
@@ -117,6 +118,7 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
         rng: &mut impl Rng,
         tree: &Particle<MAX_NODES>,
         node_idx: usize,
+        ensemble_predictions: &Array<f64, Ix1>,
         context: &Self::Context,
     ) -> MutationDecision {
         let depth = tree.get_depth(node_idx);
@@ -128,9 +130,8 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
 
         let node_samples: Vec<usize> = tree.get_leaf_samples(node_idx).collect();
 
-        // Generate and validate proposal using integrated strategies
-        let (split_var, split_val) = match self.propose_split(rng, &node_samples, node_idx, context)
-        {
+        // Given the node of this particle, propose a split mutation given this nodes data samples
+        let (split_var, split_val) = match self.propose_split(rng, &node_samples, context) {
             Some(split) => split,
             None => return MutationDecision::Reject,
         };
@@ -140,8 +141,16 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
         //     return MutationDecision::Reject;
         // }
 
-        let (left_val, right_val) =
-            self.propose_leaf_values(rng, &node_samples, split_var, split_val, context);
+        // Given this node's data samples and proposed split variable and value, propose
+        // two new child leaf values
+        let (left_val, right_val) = self.propose_leaf_values(
+            rng,
+            &node_samples,
+            split_var,
+            split_val,
+            ensemble_predictions,
+            context,
+        );
 
         MutationDecision::Accept(TreeProposal {
             node_idx,
@@ -182,7 +191,6 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         &self,
         rng: &mut impl Rng,
         node_samples: &[usize],
-        node_idx: usize,
         context: &TreeContext,
     ) -> Option<(usize, f64)> {
         // Select split variable based on splitting probabilities or uniform
@@ -218,6 +226,7 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
         node_samples: &[usize],
         split_var: usize,
         split_val: f64,
+        ensemble_predictions: &Array<f64, Ix1>,
         context: &TreeContext,
     ) -> (f64, f64) {
         let initial_state = (0.0, 0, 0.0, 0);
@@ -226,10 +235,10 @@ impl<R: ResponseStrategy> TreeUpdater<R> {
             initial_state,
             |(mut l_sum, mut l_n, mut r_sum, mut r_n), &idx| {
                 if context.x_data[[idx, split_var]] < split_val {
-                    l_sum += context.y_data[idx];
+                    l_sum += ensemble_predictions[idx];
                     l_n += 1;
                 } else {
-                    r_sum += context.y_data[idx];
+                    r_sum += ensemble_predictions[idx];
                     r_n += 1;
                 }
                 (l_sum, l_n, r_sum, r_n)

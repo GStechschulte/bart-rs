@@ -96,8 +96,6 @@ class PGBART(ArrayStepShared):
         shape = initial_point[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
 
-        print(f"shape: {shape}, self.shape: {self.shape}")
-
         # Set trees_shape (dim for separate tree structures)
         # and leaves_shape (dim for leaf node values)
         # One of the two is always one, the other equal to self.shape
@@ -111,8 +109,6 @@ class PGBART(ArrayStepShared):
 
         splitting_probs = np.cumsum(self.alpha_vec)
 
-        print(f"split_rules: {self.bart.split_rules}")
-
         if self.bart.split_rules:
             self.split_rules = self.bart.split_rules
         else:
@@ -123,7 +119,6 @@ class PGBART(ArrayStepShared):
         self.leaf_sd = np.ones(self.leaves_shape)
 
         y_unique = np.unique(self.bart.Y)
-        print(y_unique)
         if y_unique.size == 2 and np.all(y_unique == [0, 1]):
             self.leaf_sd *= 3 / self.m**0.5
         else:
@@ -136,7 +131,7 @@ class PGBART(ArrayStepShared):
         self.compiled_pymc_model = CompiledPyMCModel(model, vars)
 
         # Set a random u64 seed for reproducibility
-        seed = np.random.randint(2 ** 31 - 1)
+        # seed = np.random.randint(2 ** 31 - 1)
 
         # TODO: Initialize the settings that correspond to the BART extension
         # if self.bart.response == "constant":
@@ -150,11 +145,12 @@ class PGBART(ArrayStepShared):
 
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
         max_nodes_per_tree = 2 ** (max_depth + 1) - 1
+        max_nodes_per_tree = 127
 
         split_rules = list(self.bart.split_rules.values())
 
-        # print(f"X: {self.X}")
-        # print(f"y: {self.bart.Y}")
+        print(f"X.shape: {self.X.shape}")
+        print(f"y.shape: {self.bart.Y.shape}")
         print(f"init_leaf_value: {init_leaf_value}")
         print(f"split_rules: {split_rules}")
         print(f"response_rule: {self.bart.response}")
@@ -190,7 +186,7 @@ class PGBART(ArrayStepShared):
         # new_state, info = pg.step(rng, state)
 
         self.pg_bart = PySampler.init(
-            x=self.X,
+            x=np.asfortranarray(self.X),
             y=self.bart.Y,
             model=self.compiled_pymc_model.get_function_pointer(),
             settings=settings
