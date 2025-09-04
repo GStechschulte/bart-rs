@@ -145,7 +145,7 @@ class PGBART(ArrayStepShared):
 
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
         max_nodes_per_tree = 2 ** (max_depth + 1) - 1
-        max_nodes_per_tree = 127
+        max_nodes_per_tree = 63
 
         split_rules = list(self.bart.split_rules.values())
 

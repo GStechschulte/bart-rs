@@ -2,6 +2,7 @@ use std::ffi::c_double;
 
 pub mod base;
 pub mod builder;
+pub mod forest;
 pub mod particle;
 pub mod resampling;
 pub mod response;
@@ -106,6 +107,7 @@ impl PySampler {
         let sampler = BartSamplerBuilder::new()
             .with_max_nodes(settings.max_nodes)
             .with_n_particles(settings.n_particles)
+            .with_n_trees(settings.n_trees)
             .with_init_leaf_value(settings.init_leaf_value)
             .with_split_strategies(settings.split_rules)
             .with_response_strategy(settings.response_rule)

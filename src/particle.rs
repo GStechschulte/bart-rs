@@ -1,9 +1,95 @@
-use std::{f64, rc::Rc, usize};
+use std::{collections::VecDeque, f64, rc::Rc, usize};
 
 use numpy::ndarray::{Array, Ix1, Ix2};
 
+use crate::update::{TreeContext, TreeProposal};
+
 // A Particle is a shared pointer to a tree
-pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
+// pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
+
+#[derive(Debug)]
+pub struct Particle<const MAX_NODES: usize> {
+    pub tree: Rc<Tree<MAX_NODES>>,
+    pub expandable_nodes: Rc<VecDeque<usize>>,
+}
+
+impl<const MAX_NODES: usize> Particle<MAX_NODES> {
+    pub fn new(init_leaf_value: f64, n_samples: usize) -> Self {
+        Self {
+            tree: Rc::new(Tree::new(init_leaf_value, n_samples)),
+            expandable_nodes: Rc::new(VecDeque::from([0])), // Start with root
+        }
+    }
+
+    pub fn new_reference(init_leaf_value: f64, n_samples: usize) -> Self {
+        Self {
+            tree: Rc::new(Tree::new(init_leaf_value, n_samples)),
+            expandable_nodes: Rc::new(VecDeque::new()), // Reference particle - no growth
+        }
+    }
+
+    /// Check if particle has expandable nodes (no COW)
+    pub fn has_expandable_nodes(&self) -> bool {
+        !self.expandable_nodes.is_empty()
+    }
+
+    /// Peek next expandable node (no COW)
+    pub fn peek_next_expandable(&self) -> Option<usize> {
+        self.expandable_nodes.front().copied()
+    }
+
+    /// Pop next expandable node (queue COW only - tree untouched!)
+    pub fn pop_next_expandable(&mut self) -> Option<usize> {
+        Rc::make_mut(&mut self.expandable_nodes).pop_front()
+    }
+
+    /// Add new expandable nodes (queue COW only)
+    pub fn add_expandable_nodes(&mut self, nodes: &[usize]) {
+        let queue = Rc::make_mut(&mut self.expandable_nodes);
+        queue.extend(nodes.iter());
+    }
+
+    /// Get mutable tree reference (tree COW only)
+    pub fn tree_mut(&mut self) -> &mut Tree<MAX_NODES> {
+        Rc::make_mut(&mut self.tree)
+    }
+
+    /// Apply mutation that affects both tree and queue
+    pub fn apply_mutation(&mut self, proposal: &TreeProposal, context: &TreeContext) {
+        // Tree mutation (tree COW if needed)
+        let tree = self.tree_mut();
+        tree.split_node(
+            proposal.node_idx,
+            proposal.split_var,
+            proposal.split_val,
+            proposal.left_value,
+            proposal.right_value,
+        );
+
+        tree.update_leaf_assignments(
+            proposal.node_idx,
+            proposal.split_var,
+            proposal.split_val,
+            &proposal.affected_samples,
+            &context.x_data,
+        );
+
+        // Queue update (queue COW if needed)
+        self.add_expandable_nodes(&[
+            2 * proposal.node_idx + 1, // Left child
+            2 * proposal.node_idx + 2, // Right child
+        ]);
+    }
+}
+
+impl<const MAX_NODES: usize> Clone for Particle<MAX_NODES> {
+    fn clone(&self) -> Self {
+        Self {
+            tree: Rc::clone(&self.tree),
+            expandable_nodes: Rc::new((*self.expandable_nodes).clone()),
+        }
+    }
+}
 
 pub type SplitVar = usize;
 pub type SplitVal = f64;
@@ -12,13 +98,13 @@ pub type LeafIdx = usize;
 
 #[derive(Clone, Debug)]
 pub struct Tree<const MAX_NODES: usize> {
-    // pub split_var: Vec<SplitVar>,
-    // pub split_val: Vec<SplitVal>,
-    // pub leaf_val: Vec<LeafVal>,
+    pub split_var: Vec<SplitVar>,
+    pub split_val: Vec<SplitVal>,
+    pub leaf_val: Vec<LeafVal>,
     // pub leaf_indices: Vec<LeafIdx>,
-    pub split_var: [SplitVar; MAX_NODES],
-    pub split_val: [SplitVal; MAX_NODES],
-    pub leaf_val: [LeafVal; MAX_NODES],
+    // pub split_var: [SplitVar; MAX_NODES],
+    // pub split_val: [SplitVal; MAX_NODES],
+    // pub leaf_val: [LeafVal; MAX_NODES],
     pub leaf_indices: Vec<LeafIdx>,
     pub size: usize,
 }
@@ -26,38 +112,38 @@ pub struct Tree<const MAX_NODES: usize> {
 impl<const MAX_NODES: usize> Tree<MAX_NODES> {
     /// Create a new tree with just a root leaf node
     pub fn new(init_leaf_value: LeafVal, n_samples: usize) -> Self {
-        let split_var = [usize::MAX; MAX_NODES];
-        let split_val = [f64::NAN; MAX_NODES];
-        let mut leaf_val = [0.0; MAX_NODES];
+        // let split_var = [usize::MAX; MAX_NODES];
+        // let split_val = [f64::NAN; MAX_NODES];
+        // let mut leaf_val = [0.0; MAX_NODES];
 
-        // Set only root values
-        leaf_val[0] = init_leaf_value;
-
-        Self {
-            split_var,
-            split_val,
-            leaf_val,
-            leaf_indices: vec![0; n_samples],
-            size: 1,
-        }
-
-        // let mut split_var = Vec::with_capacity(MAX_NODES);
-        // let mut split_val = Vec::with_capacity(MAX_NODES);
-        // let mut leaf_val = Vec::with_capacity(MAX_NODES);
-        // let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
-
-        // // Initialize the root as a leaf
-        // split_var.push(usize::MAX);
-        // split_val.push(f64::NAN);
-        // leaf_val.push(init_leaf_value);
+        // // Set only root values
+        // leaf_val[0] = init_leaf_value;
 
         // Self {
         //     split_var,
         //     split_val,
         //     leaf_val,
-        //     leaf_indices,
+        //     leaf_indices: vec![0; n_samples],
         //     size: 1,
         // }
+
+        let mut split_var = Vec::with_capacity(MAX_NODES);
+        let mut split_val = Vec::with_capacity(MAX_NODES);
+        let mut leaf_val = Vec::with_capacity(MAX_NODES);
+        let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
+
+        // Initialize the root as a leaf
+        split_var.push(usize::MAX);
+        split_val.push(f64::NAN);
+        leaf_val.push(init_leaf_value);
+
+        Self {
+            split_var,
+            split_val,
+            leaf_val,
+            leaf_indices,
+            size: 1,
+        }
     }
 
     // Get the depth of a node in the binary tree
@@ -130,25 +216,41 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
             MAX_NODES
         );
 
+        // self.split_var[leaf_idx] = split_var;
+        // self.split_val[leaf_idx] = split_val;
+        // self.leaf_val[leaf_idx] = f64::NAN;
+
+        // self.split_var[left_child] = usize::MAX;
+        // self.split_val[left_child] = f64::NAN;
+        // self.leaf_val[left_child] = left_val;
+
+        // self.split_var[right_child] = usize::MAX;
+        // self.split_val[right_child] = f64::NAN;
+        // self.leaf_val[right_child] = right_val;
+
+        // self.size = self.size.max(right_child + 1);
+
+        // NOTE: Old implementation below
+        let required_size = right_child + 1;
+        while self.split_var.len() < required_size {
+            self.split_var.push(usize::MAX);
+            self.split_val.push(f64::NAN);
+            self.leaf_val.push(0.0);
+        }
+
         self.split_var[leaf_idx] = split_var;
         self.split_val[leaf_idx] = split_val;
-        self.leaf_val[leaf_idx] = f64::NAN;
+        self.leaf_val[leaf_idx] = f64::NAN; // Leaf node becomes an internal node
 
+        // Set the left child as a leaf at the calculated index
         self.split_var[left_child] = usize::MAX;
         self.split_val[left_child] = f64::NAN;
         self.leaf_val[left_child] = left_val;
 
+        // Set the right child as a leaf at the calculated index
         self.split_var[right_child] = usize::MAX;
         self.split_val[right_child] = f64::NAN;
         self.leaf_val[right_child] = right_val;
-
-        self.size = self.size.max(right_child + 1);
-
-        // NOTE: Old implementation below
-
-        // self.split_var[leaf_idx] = split_var;
-        // self.split_val[leaf_idx] = split_val;
-        // self.leaf_val[leaf_idx] = f64::NAN; // Leaf node becomes an internal node
 
         // // Left child
         // self.split_var.push(usize::MAX);
@@ -160,7 +262,7 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
         // self.split_val.push(f64::MAX);
         // self.leaf_val.push(right_val);
 
-        // self.size = self.size.max(right_child + 1);
+        self.size = self.size.max(right_child + 1);
     }
 
     /// Updates leaf assignments with context after a split
@@ -198,6 +300,8 @@ impl<const MAX_NODES: usize> Tree<MAX_NODES> {
 /// value for this data sample. When computing predictions on test data (new unseen data), one needs
 /// to perform a tree traversal to compute which leaf node a data sample falls into.
 pub trait Predict {
+    fn predict_training_into(&self, out: &mut Array<f64, Ix1>);
+
     fn predict_training(&self) -> Array<f64, Ix1>;
     // fn predict_single_test(&self, data: &[f64]) -> f64;
     // Computes predictions for two-dimensional data using the binary decision tree.
@@ -209,6 +313,13 @@ pub trait Predict {
 }
 
 impl<const MAX_NODES: usize> Predict for Tree<MAX_NODES> {
+    fn predict_training_into(&self, out: &mut Array<f64, Ix1>) {
+        // Iterate and fill the buffer in-place. No allocations here.
+        for (i, &leaf_idx) in self.leaf_indices.iter().enumerate() {
+            out[i] = self.leaf_val[leaf_idx];
+        }
+    }
+
     fn predict_training(&self) -> Array<f64, Ix1> {
         self.leaf_indices
             .iter()

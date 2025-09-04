@@ -18,9 +18,9 @@ impl<const MAX_NODES: usize> Default for BartState<MAX_NODES> {
 }
 
 impl<const MAX_NODES: usize> BartState<MAX_NODES> {
-    pub fn new(trees: Vec<Tree<MAX_NODES>>, init_predictions: Array<f64, Ix1>) -> Self {
+    pub fn new(n_trees: usize, init_predictions: Array<f64, Ix1>) -> Self {
         Self {
-            ensemble_trees: trees,
+            ensemble_trees: Vec::with_capacity(n_trees),
             ensemble_predictions: init_predictions,
         }
     }

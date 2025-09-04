@@ -1,4 +1,5 @@
 use std::f64;
+use std::rc::Rc;
 
 use numpy::ndarray::{Array, Array1, Ix1, Ix2};
 use rand::Rng;
@@ -88,7 +89,7 @@ pub trait Update<const MAX_NODES: usize> {
     fn should_update(
         &self,
         rng: &mut impl Rng,
-        particle: &Particle<MAX_NODES>,
+        particle: &Rc<Tree<MAX_NODES>>,
         node_idx: usize,
         ensemble_predictions: &Array<f64, Ix1>,
         context: &Self::Context,
@@ -116,7 +117,7 @@ impl<const MAX_NODES: usize, R: ResponseStrategy> Update<MAX_NODES> for TreeUpda
     fn should_update(
         &self,
         rng: &mut impl Rng,
-        tree: &Particle<MAX_NODES>,
+        tree: &Rc<Tree<MAX_NODES>>,
         node_idx: usize,
         ensemble_predictions: &Array<f64, Ix1>,
         context: &Self::Context,
@@ -315,6 +316,7 @@ pub struct BARTWeighter {
 
 impl<const MAX_NODES: usize> Weight<MAX_NODES> for BARTWeighter {
     fn log_weight(&self, data: &Array<f64, Ix1>) -> f64 {
+        // println!("data: {:?}", data);
         unsafe { (self.logp_func)(data.as_ptr(), data.len()) }
     }
 }

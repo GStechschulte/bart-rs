@@ -280,7 +280,6 @@ impl BartSamplerBuilder {
         let sampler_components = (tree_updater, tree_weighter, SystematicResampling);
 
         let y_mean = y_data.mean().unwrap_or(0.0);
-        let init_leaf_value_rs = y_mean / n_trees as f64;
         let init_predictions = Array::from_elem(y_data.len(), y_mean);
         let n_samples = y_data.len();
 
@@ -291,12 +290,14 @@ impl BartSamplerBuilder {
                     sampler_components.0, // update
                     sampler_components.1, // weight
                     sampler_components.2, // resample
+                    n_particles,
+                    n_samples,
                 );
-                let tree_ensemble: Vec<Tree<63>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
+                // let tree_ensemble: Vec<Tree<63>> = (0..n_trees)
+                //     .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+                //     .collect();
 
-                let state = BartState::new(tree_ensemble, init_predictions);
+                let state = BartState::new(n_trees, init_predictions);
 
                 Ok(BartSampler::Nodes63 { sampler, state })
             }
@@ -306,12 +307,14 @@ impl BartSamplerBuilder {
                     sampler_components.0, // update
                     sampler_components.1, // weight
                     sampler_components.2, // resample
+                    n_particles,
+                    n_samples,
                 );
-                let tree_ensemble: Vec<Tree<127>> = (0..n_trees)
-                    .map(|_| Tree::new(init_leaf_value_rs, n_samples))
-                    .collect();
+                // let tree_ensemble: Vec<Tree<127>> = (0..n_trees)
+                //     .map(|_| Tree::new(init_leaf_value_rs, n_samples))
+                //     .collect();
 
-                let state = BartState::new(tree_ensemble, init_predictions);
+                let state = BartState::new(n_trees, init_predictions);
 
                 Ok(BartSampler::Nodes127 { sampler, state })
             }

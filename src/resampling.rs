@@ -10,10 +10,11 @@ use pyo3::exceptions::PyValueError;
 /// Resampling interface for implementing different resampling methods
 pub trait ResamplingStrategy {
     /// Resample particle indices based on their normalized weights
-    fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
+    // fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
+    fn resample<R>(rng: &mut R, weights: &[f64]) -> Vec<usize>
     where
-        R: Rng,
-        I: Iterator<Item = f64>;
+        R: Rng;
+    // I: Iterator<Item = f64>;
 }
 
 /// Systematic resampling strategy
@@ -26,63 +27,51 @@ pub trait ResamplingStrategy {
 pub struct SystematicResampling;
 
 impl ResamplingStrategy for SystematicResampling {
-    fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
+    // fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
+    fn resample<R>(rng: &mut R, weights: &[f64]) -> Vec<usize>
     where
         R: Rng,
-        I: Iterator<Item = f64>,
+        // I: Iterator<Item = f64>,
     {
-        // let n = weights.len();
-        // let u = rng.random::<f64>(); // Exclusive (does not sample 0 or 1)
-        // let mut cumsum_iter = weights
-        //     .iter()
-        //     .scan(0.0, |acc, &w| {
-        //         *acc += w;
-        //         Some(*acc)
-        //     })
-        //     .enumerate()
-        //     .peekable();
+        // let weights_vec: Vec<f64> = weights.collect();
+        println!("normalized weights: {:?}", weights);
+        let n = weights.len();
+        let u = rng.random::<f64>();
 
-        // let linspace = (0..n).map(|i| (i as f64 + u) / n as f64);
+        let mut current_idx = 0usize;
+        let mut current_cum = 0.0f64;
+        let mut ancestors = Vec::with_capacity(n);
 
-        // // Map each target point to a particle index.
-        // let indices = linspace
-        //     .map(|point| {
-        //         while let Some(&(_, cumsum_val)) = cumsum_iter.peek() {
-        //             if cumsum_val < point {
-        //                 cumsum_iter.next(); // Consume and advance to the next bin.
-        //             } else {
-        //                 break; // Found the correct bin.
-        //             }
-        //         }
-
-        //         // The index of the peeked item is the resampled index.
-        //         cumsum_iter.peek().map_or(n - 1, |(idx, _)| *idx)
-        //     })
-        //     .collect();
-
-        // indices
-
-        let weights_vec: Vec<f64> = weights.collect();
-        let n = weights_vec.len();
-        let u = rng.random::<f64>(); // Random offset
-
-        // Stream cumulative sum computation
-        let cumsum_vec: Vec<f64> = weights_vec
-            .iter()
-            .scan(0.0, |acc, &w| {
-                *acc += w;
-                Some(*acc)
-            })
-            .collect();
-
-        // Return streaming iterator for indices
-        (0..n).map(move |i| {
+        for i in 0..n {
             let target = (i as f64 + u) / n as f64;
-            cumsum_vec
-                .iter()
-                .position(|&cum| cum >= target)
-                .unwrap_or(n - 1)
-        })
+
+            while current_cum < target && current_idx < n {
+                current_cum += weights[current_idx];
+                current_idx += 1;
+            }
+
+            let ancestor = if current_idx == 0 { 0 } else { current_idx - 1 };
+            ancestors.push(ancestor);
+        }
+
+        ancestors
+        // let weights_vec: Vec<f64> = weights.collect();
+        // println!("normalized weights: {:?}", weights_vec);
+        // let n = weights_vec.len();
+        // let u = rng.random::<f64>(); // Random offset between 0 and 1
+
+        // let mut current_idx = 0usize;
+        // let mut current_cum = 0.0f64;
+
+        // (0..n).map(move |i| {
+        //     let target = (i as f64 + u) / n as f64;
+        //     while current_cum < target && current_idx < n {
+        //         current_cum += weights_vec[current_idx];
+        //         current_idx += 1;
+        //     }
+        //     // If we've reached the end, clamp to the last index
+        //     if current_idx == 0 { 0 } else { current_idx - 1 }
+        // })
     }
 }
 
