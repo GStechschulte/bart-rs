@@ -35,6 +35,7 @@ use crate::data::ExternalData;
 use crate::ops::Response;
 use crate::pgbart::{PgBartSettings, PgBartState};
 use crate::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
+use crate::tree::DecisionTree;
 
 use std::str::FromStr;
 
@@ -48,6 +49,64 @@ use pyo3::prelude::*;
 #[pyclass(unsendable)]
 struct StateWrapper {
     state: PgBartState,
+}
+
+#[pyclass]
+#[derive(Clone)]
+struct TreeDump {
+    #[pyo3(get)]
+    split_feature: Vec<i32>,
+    #[pyo3(get)]
+    split_value: Vec<f64>,
+    #[pyo3(get)]
+    left_child: Vec<i32>,
+    #[pyo3(get)]
+    right_child: Vec<i32>,
+    #[pyo3(get)]
+    leaf_value: Vec<f64>,
+    #[pyo3(get)]
+    root_index: i32,
+}
+
+impl TreeDump {
+    fn from_tree(tree: &DecisionTree) -> Self {
+        let node_count = tree.feature.len();
+        let mut split_feature = Vec::with_capacity(node_count);
+        let mut split_value = Vec::with_capacity(node_count);
+        let mut left_child = Vec::with_capacity(node_count);
+        let mut right_child = Vec::with_capacity(node_count);
+        let mut leaf_value = Vec::with_capacity(node_count);
+
+        for idx in 0..node_count {
+            let is_leaf = tree.is_leaf(idx);
+            split_feature.push(if is_leaf {
+                -1
+            } else {
+                tree.feature[idx] as i32
+            });
+            split_value.push(if is_leaf { 0.0 } else { tree.threshold[idx] });
+            left_child.push(
+                tree.left_child(idx)
+                    .map(|value| value as i32)
+                    .unwrap_or(-1),
+            );
+            right_child.push(
+                tree.right_child(idx)
+                    .map(|value| value as i32)
+                    .unwrap_or(-1),
+            );
+            leaf_value.push(tree.value[idx]);
+        }
+
+        Self {
+            split_feature,
+            split_value,
+            left_child,
+            right_child,
+            leaf_value,
+            root_index: 0,
+        }
+    }
 }
 
 #[pyfunction]
@@ -108,7 +167,11 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>) {
+) -> (
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<i32>>,
+    Vec<TreeDump>,
+) {
     // Update whether or not `pm.sampler` is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
@@ -122,13 +185,21 @@ fn step<'py>(
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
     let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
 
-    (py_preds_array, py_variable_inclusion_array)
+    let tree_dumps = wrapper
+        .state
+        .particles
+        .iter()
+        .map(|particle| TreeDump::from_tree(&particle.tree))
+        .collect();
+
+    (py_preds_array, py_variable_inclusion_array, tree_dumps)
 }
 
 #[pymodule]
-fn pymc_bart(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pymc_bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
+    m.add_class::<TreeDump>()?;
 
     Ok(())
 }

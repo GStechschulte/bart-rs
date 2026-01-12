@@ -42,6 +42,8 @@ def _sample_posterior(
     excluded : Optional[npt.NDArray[np.int_]]
         Indexes of the variables to exclude when computing predictions
     """
+    # Contract: all_trees is a list of draws; each draw is a list of output dims;
+    # each output-dim entry is a list of tree-like objects with predict() and dump fields.
     stacked_trees = all_trees
 
     if isinstance(X, Variable):

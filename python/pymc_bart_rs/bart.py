@@ -67,8 +67,9 @@ class BARTRV(RandomVariable):
                 shape = size[0]
             else:
                 shape = 1
-            raise NotImplementedError("_sample_posterior not implemented")
-            # return _sample_posterior(cls.all_trees, cls.X, rng=rng, shape=shape).squeeze().T
+            return _sample_posterior(
+                cls.all_trees, cls.X, rng=rng, shape=shape
+            ).squeeze().T
 
 
 bart = BARTRV()

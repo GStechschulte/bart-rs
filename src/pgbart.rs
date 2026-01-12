@@ -278,19 +278,27 @@ impl PgBartState {
     fn update_splitting_probability(&mut self, particle: &Particle) {
         self.tree_ops.splitting_probs = normalized_cumsum(&self.tree_ops.alpha_vec);
 
-        particle.tree.feature.iter().for_each(|&idx| {
-            if let Some(alpha) = self.tree_ops.alpha_vec.get_mut(idx) {
+        for node_index in 0..particle.tree.feature.len() {
+            if particle.tree.is_leaf(node_index) {
+                continue;
+            }
+            let feature = particle.tree.feature[node_index];
+            if let Some(alpha) = self.tree_ops.alpha_vec.get_mut(feature) {
                 *alpha += 1.0;
             }
-        });
+        }
     }
 
     /// Updates variable inclusion by incrementing the feature counter if *this*
     /// feature was used for splitting.
     pub fn update_variable_inclusion(&mut self, particle: &Particle) {
-        particle.tree.feature.iter().for_each(|&idx| {
-            self.variable_inclusion[idx] += 1;
-        });
+        for node_index in 0..particle.tree.feature.len() {
+            if particle.tree.is_leaf(node_index) {
+                continue;
+            }
+            let feature = particle.tree.feature[node_index];
+            self.variable_inclusion[feature] += 1;
+        }
     }
 
     /// Returns variable inclusion counter.

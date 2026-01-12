@@ -24,9 +24,10 @@ from pymc.step_methods.arraystep import ArrayStepShared
 from pymc.step_methods.compound import Competence
 from pytensor.graph.basic import Variable
 
-from pymc_bart.bart import BARTRV
-from pymc_bart.compile_pymc import CompiledPyMCModel
-from pymc_bart.pymc_bart import initialize, step
+from pymc_bart_rs.bart import BARTRV
+from pymc_bart_rs.compile_pymc import CompiledPyMCModel
+from pymc_bart_rs.pymc_bart_rs import initialize, step
+from pymc_bart_rs.tree_dump import TreeDump
 
 
 class PGBART(ArrayStepShared):
@@ -150,7 +151,14 @@ class PGBART(ArrayStepShared):
         # Record time to quantify performance improvements
         t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
-        sum_trees, variable_inclusion = step(self.state, self.tune)
+        sum_trees, variable_inclusion, tree_dumps = step(self.state, self.tune)
+        if not self.tune:
+            wrapped_trees = [TreeDump.from_rust(dump) for dump in tree_dumps]
+            if self.trees_shape == 1:
+                draw_entry = [wrapped_trees]
+            else:
+                draw_entry = [list(wrapped_trees) for _ in range(self.trees_shape)]
+            self.bart.all_trees.append(draw_entry)
         t1 = perf_counter()
 
         stats = {
