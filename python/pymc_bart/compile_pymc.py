@@ -8,7 +8,7 @@ import pymc as pm
 import pytensor
 
 from pymc.pytensorf import (
-    compile_pymc,
+    compile,
     inputvars,
     join_nonshared_inputs,
     make_shared_replacements,
@@ -55,7 +55,7 @@ class CompiledPyMCModel:
             initial_values, out_vars, vars, shared
         )
 
-        logp_fn = compile_pymc(
+        logp_fn = compile(
             inputs=[new_joined_inputs], outputs=new_out[0], mode="NUMBA"
         )
         logp_fn.trust_input = True
