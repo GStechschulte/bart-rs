@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use rand::{self, thread_rng, Rng};
+use rand::distributions::WeightedIndex;
 use rand_distr::{Distribution, Normal};
 
 /// Variants indicate the types of response strategies to compute leaf node values.
@@ -144,15 +145,20 @@ impl TreeSamplingOps {
     ///
     /// Sampling of splitting variables is proportional to `alpha_vec`.
     pub fn sample_split_feature(&self) -> usize {
-        let mut rng = rand::thread_rng();
-
-        let p = rng.gen::<f64>();
-        for (idx, value) in self.splitting_probs.iter().enumerate() {
-            if p <= *value {
-                return idx;
-            }
+        if self.splitting_probs.is_empty() {
+            return 0;
         }
 
-        self.splitting_probs.len() - 1
+        let weights: Vec<f64> = self
+            .splitting_probs
+            .iter()
+            .map(|w| if w.is_finite() && *w > 0.0 { *w } else { 0.0 })
+            .collect();
+
+        let mut rng = thread_rng();
+        match WeightedIndex::new(weights) {
+            Ok(dist) => dist.sample(&mut rng),
+            Err(_) => rng.gen_range(0..self.splitting_probs.len()),
+        }
     }
 }

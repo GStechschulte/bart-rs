@@ -123,7 +123,7 @@ impl PgBartState {
 
         // Tree sampling operations
         let alpha_vec: Vec<f64> = params.init_alpha_vec.clone();
-        let splitting_probs: Vec<f64> = normalized_cumsum(&alpha_vec);
+        let splitting_probs: Vec<f64> = alpha_vec.clone();
 
         let tree_ops = TreeSamplingOps {
             alpha_vec,
@@ -282,7 +282,7 @@ impl PgBartState {
 
     /// Updates the probabilities of sampling each covariate if in the tuning phase
     fn update_splitting_probability(&mut self, particle: &Particle) {
-        self.tree_ops.splitting_probs = normalized_cumsum(&self.tree_ops.alpha_vec);
+        self.tree_ops.splitting_probs = self.tree_ops.alpha_vec.clone();
 
         for node_index in 0..particle.tree.feature.len() {
             if particle.tree.is_leaf(node_index) {

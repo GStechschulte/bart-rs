@@ -156,34 +156,50 @@ impl Particle {
 
         let (left_samples, right_samples, split_value) = match rule {
             SplitRuleType::Continuous(continuous_rule) => {
-                // TODO: unnecessary nested iterable?
-                let feature_values: Vec<f64> = samples
-                    .iter()
-                    .map(|&i| X[[i, feature]])
-                    .filter(|&x| x.is_finite())
-                    .collect();
+                let feature_values: Vec<f64> = samples.iter().map(|&i| X[[i, feature]]).collect();
 
-                if let Some(split_val) = continuous_rule.sample_split_value(&feature_values) {
-                    // TODO: divide is riddled with vector allocations
-                    let (left, right) = continuous_rule.divide(&feature_values, &split_val);
-                    (left, right, split_val)
-                } else {
-                    return false;
+                let split_val = match continuous_rule.sample_split_value(&feature_values) {
+                    Some(value) => value,
+                    None => return false,
+                };
+
+                let mut left = Vec::new();
+                let mut right = Vec::new();
+
+                for (&row_idx, &val) in samples.iter().zip(feature_values.iter()) {
+                    if !val.is_finite() {
+                        continue;
+                    }
+
+                    if val < split_val {
+                        left.push(row_idx);
+                    } else {
+                        right.push(row_idx);
+                    }
                 }
+
+                (left, right, split_val)
             }
             SplitRuleType::OneHot(one_hot_rule) => {
-                let feature_values: Vec<i32> = samples
-                    .iter()
-                    .map(|&i| X[[i, feature]] as i32) // Explicit type cast to i32
-                    .filter(|&x| x >= 0)
-                    .collect();
+                let feature_values: Vec<i32> = samples.iter().map(|&i| X[[i, feature]] as i32).collect();
 
-                if let Some(split_val) = one_hot_rule.sample_split_value(&feature_values) {
-                    let (left, right) = one_hot_rule.divide(&feature_values, &split_val);
-                    (left, right, split_val as f64) // Convert i32 to f64 for consistency
-                } else {
-                    return false;
+                let split_val = match one_hot_rule.sample_split_value(&feature_values) {
+                    Some(value) => value,
+                    None => return false,
+                };
+
+                let mut left = Vec::new();
+                let mut right = Vec::new();
+
+                for (&row_idx, &val) in samples.iter().zip(feature_values.iter()) {
+                    if val == split_val {
+                        left.push(row_idx);
+                    } else {
+                        right.push(row_idx);
+                    }
                 }
+
+                (left, right, split_val as f64)
             }
         };
 

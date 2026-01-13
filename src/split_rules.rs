@@ -1,6 +1,7 @@
 //! Split rule trait definitions and implementations for decision trees. The module
 //! supports sampling split values from a set of candidates and dividing data points based on //! the chosen split value.
 
+use std::collections::HashSet;
 use std::f64;
 use std::iter::Iterator;
 
@@ -29,17 +30,22 @@ impl SplitRule for ContinuousSplit {
     type Value = f64;
 
     fn sample_split_value(&self, candidates: &[f64]) -> Option<f64> {
-        if candidates.len() > 1 {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
-        } else {
-            None
+        let mut iter = candidates.iter().copied().filter(|v| v.is_finite());
+        let first = iter.next()?;
+        let (min_val, max_val) = iter.fold((first, first), |(min_v, max_v), val| {
+            (min_v.min(val), max_v.max(val))
+        });
+
+        if !min_val.is_finite() || !max_val.is_finite() || min_val >= max_val {
+            return None;
         }
+
+        Some(rand::thread_rng().gen_range(min_val..max_val))
     }
 
     fn divide(&self, candidates: &[f64], split_value: &f64) -> (Vec<usize>, Vec<usize>) {
         let (left, right): (Vec<usize>, Vec<usize>) =
-            (0..candidates.len()).partition(|&idx| candidates[idx] <= *split_value);
+            (0..candidates.len()).partition(|&idx| candidates[idx] < *split_value);
         (left, right)
     }
 }
@@ -51,12 +57,23 @@ impl SplitRule for OneHotSplit {
     type Value = i32;
 
     fn sample_split_value(&self, candidates: &[i32]) -> Option<i32> {
-        if candidates.len() > 1 && !candidates.iter().all(|&x| x == candidates[0]) {
-            let idx = rand::thread_rng().gen_range(0..candidates.len());
-            Some(candidates[idx])
-        } else {
-            None
+        let mut iter = candidates.iter().copied();
+        let first = match iter.next() {
+            Some(v) => v,
+            None => return None,
+        };
+
+        if iter.clone().all(|v| v == first) {
+            return None;
         }
+
+        let unique: std::collections::HashSet<i32> = iter.chain(std::iter::once(first)).collect();
+        let mut unique_vals: Vec<i32> = unique.into_iter().collect();
+        if unique_vals.is_empty() {
+            return None;
+        }
+
+        Some(unique_vals[rand::thread_rng().gen_range(0..unique_vals.len())])
     }
 
     fn divide(&self, candidates: &[i32], split_value: &i32) -> (Vec<usize>, Vec<usize>) {
