@@ -145,6 +145,16 @@ impl TreeDump {
     }
 }
 
+impl PgBartState {
+    /// Snapshot of the current tree ensemble only (excludes transient proposal particles).
+    fn tree_ensemble_dump(&self, x_train: &Array2<f64>) -> Vec<TreeDump> {
+        self.trees()
+            .map(|tree| TreeDump::from_tree(tree, x_train))
+            .collect()
+    }
+}
+
+
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 fn initialize(
@@ -222,11 +232,7 @@ fn step<'py>(
     let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
 
     let x_train = wrapper.state.data.X();
-    let tree_dumps = wrapper
-        .state
-        .trees()
-        .map(|tree| TreeDump::from_tree(tree, x_train.as_ref()))
-        .collect();
+    let tree_dumps = wrapper.state.tree_ensemble_dump(x_train.as_ref());
 
     (py_preds_array, py_variable_inclusion_array, tree_dumps)
 }
