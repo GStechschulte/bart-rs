@@ -15,6 +15,8 @@ class TreeDump:
         left_child: Iterable[int],
         right_child: Iterable[int],
         leaf_value: Iterable[float],
+        n_left: Optional[Iterable[int]] = None,
+        n_right: Optional[Iterable[int]] = None,
         root_index: int = 0,
     ) -> None:
         self.split_feature = [int(v) for v in split_feature]
@@ -22,6 +24,8 @@ class TreeDump:
         self.left_child = [int(v) for v in left_child]
         self.right_child = [int(v) for v in right_child]
         self.leaf_value = [float(v) for v in leaf_value]
+        self.n_left = [int(v) for v in n_left] if n_left is not None else None
+        self.n_right = [int(v) for v in n_right] if n_right is not None else None
         self.root_index = int(root_index)
 
     @classmethod
@@ -33,6 +37,8 @@ class TreeDump:
                 left_child=dump["left_child"],
                 right_child=dump["right_child"],
                 leaf_value=dump["leaf_value"],
+                n_left=dump.get("n_left"),
+                n_right=dump.get("n_right"),
                 root_index=dump.get("root_index", 0),
             )
 
@@ -42,6 +48,8 @@ class TreeDump:
             left_child=getattr(dump, "left_child"),
             right_child=getattr(dump, "right_child"),
             leaf_value=getattr(dump, "leaf_value"),
+            n_left=getattr(dump, "n_left", None),
+            n_right=getattr(dump, "n_right", None),
             root_index=getattr(dump, "root_index", 0),
         )
 
@@ -83,6 +91,13 @@ class TreeDump:
             right_idx = self.right_child[node]
             left_val = self._predict_node(left_idx, sample, excluded)
             right_val = self._predict_node(right_idx, sample, excluded)
+            if self.n_left is not None and self.n_right is not None:
+                n_left = self.n_left[node]
+                n_right = self.n_right[node]
+                total = n_left + n_right
+                if total > 0:
+                    weight = n_left / total
+                    return weight * left_val + (1.0 - weight) * right_val
             return 0.5 * (left_val + right_val)
 
         threshold = self.split_value[node]

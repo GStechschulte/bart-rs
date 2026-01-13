@@ -39,6 +39,7 @@ use crate::tree::DecisionTree;
 
 use std::str::FromStr;
 
+use ndarray::Array2;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
 
@@ -65,17 +66,23 @@ struct TreeDump {
     #[pyo3(get)]
     leaf_value: Vec<f64>,
     #[pyo3(get)]
+    n_left: Vec<i32>,
+    #[pyo3(get)]
+    n_right: Vec<i32>,
+    #[pyo3(get)]
     root_index: i32,
 }
 
 impl TreeDump {
-    fn from_tree(tree: &DecisionTree) -> Self {
+    fn from_tree(tree: &DecisionTree, x_train: &Array2<f64>) -> Self {
         let node_count = tree.feature.len();
         let mut split_feature = Vec::with_capacity(node_count);
         let mut split_value = Vec::with_capacity(node_count);
         let mut left_child = Vec::with_capacity(node_count);
         let mut right_child = Vec::with_capacity(node_count);
         let mut leaf_value = Vec::with_capacity(node_count);
+        let mut n_left = vec![0; node_count];
+        let mut n_right = vec![0; node_count];
 
         for idx in 0..node_count {
             let is_leaf = tree.is_leaf(idx);
@@ -98,12 +105,41 @@ impl TreeDump {
             leaf_value.push(tree.value[idx]);
         }
 
+        for sample in x_train.outer_iter() {
+            let mut node = 0;
+            loop {
+                if tree.is_leaf(node) {
+                    break;
+                }
+
+                let feature = tree.feature[node];
+                let threshold = tree.threshold[node];
+                if sample[feature] < threshold {
+                    n_left[node] += 1;
+                    if let Some(next_node) = tree.left_child(node) {
+                        node = next_node;
+                    } else {
+                        break;
+                    }
+                } else {
+                    n_right[node] += 1;
+                    if let Some(next_node) = tree.right_child(node) {
+                        node = next_node;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
         Self {
             split_feature,
             split_value,
             left_child,
             right_child,
             leaf_value,
+            n_left,
+            n_right,
             root_index: 0,
         }
     }
@@ -185,11 +221,11 @@ fn step<'py>(
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
     let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
 
+    let x_train = wrapper.state.data.X();
     let tree_dumps = wrapper
         .state
-        .particles
-        .iter()
-        .map(|particle| TreeDump::from_tree(&particle.tree))
+        .trees()
+        .map(|tree| TreeDump::from_tree(tree, x_train.as_ref()))
         .collect();
 
     (py_preds_array, py_variable_inclusion_array, tree_dumps)

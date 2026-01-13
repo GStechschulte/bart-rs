@@ -4,6 +4,7 @@ import pymc_bart_rs as pmb
 import pytest
 
 from pymc_bart_rs.utils import _sample_posterior
+from pymc_bart_rs.tree_dump import TreeDump
 
 
 @pytest.fixture(scope="module")
@@ -66,3 +67,29 @@ def test_tree_dump_variable_inclusion_counts(bart_posterior):
 
     assert counts.shape == (n_features,)
     assert (counts >= 0).all()
+
+
+def test_tree_dump_excluded_feature_weighted_average():
+    tree = TreeDump(
+        split_feature=[0, -1, -1],
+        split_value=[0.5, 0.0, 0.0],
+        left_child=[1, -1, -1],
+        right_child=[2, -1, -1],
+        leaf_value=[0.0, 10.0, 0.0],
+        n_left=[90, 0, 0],
+        n_right=[10, 0, 0],
+    )
+
+    X = np.array([[0.2], [0.8]])
+    preds = tree.predict(X, excluded=[0])
+    np.testing.assert_allclose(preds, np.array([[9.0, 9.0]]), rtol=1e-6)
+
+
+def test_tree_dump_predict_excluded_runs(bart_posterior):
+    X, mu = bart_posterior
+    all_trees = list(mu.owner.op.all_trees)
+    tree = all_trees[0][0][0]
+    preds = tree.predict(X, excluded=[0])
+
+    assert preds.shape[1] == X.shape[0]
+    assert np.isfinite(preds).all()

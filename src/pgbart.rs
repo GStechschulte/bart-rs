@@ -19,6 +19,7 @@ use crate::math::{normalized_cumsum, RunningStd};
 use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::Particle;
 use crate::split_rules::SplitRuleType;
+use crate::tree::DecisionTree;
 
 /// PgBartSetting are parameters used to initialize a new `PgBartState`.
 ///
@@ -236,6 +237,11 @@ impl PgBartState {
             // Replace the current tree with the new particle
             self.particles[tree_id] = new_particle;
         });
+    }
+
+    /// Returns an iterator over the current ensemble of trees.
+    pub fn trees(&self) -> impl Iterator<Item = &DecisionTree> {
+        self.particles.iter().map(|particle| &particle.tree)
     }
 
     /// Generate an initial set of particles for _this_ tree.
