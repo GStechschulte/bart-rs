@@ -15,7 +15,7 @@ use rand::{thread_rng, Rng};
 use rand_distr::{Distribution, Normal};
 
 use crate::data::PyData;
-use crate::math::{normalized_cumsum, RunningStd};
+use crate::math::RunningStd;
 use crate::ops::{Response, TreeSamplingOps};
 use crate::particle::Particle;
 use crate::split_rules::SplitRuleType;
@@ -161,6 +161,9 @@ impl PgBartState {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
 
+        // Use a single RNG for the entire step to keep sampling reproducible
+        let mut rng = thread_rng();
+
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size
         let batch_size = if self.tune {
@@ -191,7 +194,8 @@ impl PgBartState {
             let predictions_minus_old = &self.predictions - &old_predictions;
 
             // Initialize local particles
-            let mut local_particles = self.initialize_particles(&X, &old_predictions, mu);
+            let mut local_particles =
+                self.initialize_particles(&X, &predictions_minus_old, mu, selected_particle);
 
             // Grow particles until all are finished
             while local_particles
@@ -207,12 +211,13 @@ impl PgBartState {
 
                 // Normalize log-likelihood and resample particles
                 let normalized_weights = normalize_weights(&local_particles[1..]);
-                local_particles = resample_particles(&mut local_particles, &normalized_weights);
+                local_particles =
+                    resample_particles(&mut rng, &mut local_particles, &normalized_weights);
             }
 
             // Normalize weights again and select a particle to replace the current tree
             let normalized_weights = normalize_weights(&local_particles);
-            let new_particle = select_particle(&mut local_particles, &normalized_weights);
+            let new_particle = select_particle(&mut rng, &mut local_particles, &normalized_weights);
 
             // Update the sum of trees with the new particle's predictions
             let new_particle_preds = &new_particle.predict(&X);
@@ -250,22 +255,21 @@ impl PgBartState {
         X: &Array2<f64>,
         sum_trees_noi: &Array1<f64>,
         mu: f64,
+        reference_particle: &Particle,
     ) -> Vec<Particle> {
         let leaf_value = mu / (self.params.n_trees as f64);
 
-        // Create a new vector of Particles with the same ParticleParams passed to
-        // PgBartState::new
-        let particles: Vec<Particle> = (0..self.params.n_particles)
-            .map(|i| {
-                let mut particle = Particle::new(leaf_value, X.nrows());
+        // Particle 0 is the reference particle corresponding to the current tree
+        let mut reference = reference_particle.clone();
+        self.update_weight(X, &mut reference, sum_trees_noi);
 
-                if i == 0 {
-                    self.update_weight(X, &mut particle, sum_trees_noi);
-                }
+        let mut particles: Vec<Particle> = Vec::with_capacity(self.params.n_particles);
+        particles.push(reference);
 
-                particle
-            })
-            .collect();
+        // Remaining particles start from a fresh stump
+        for _ in 1..self.params.n_particles {
+            particles.push(Particle::new(leaf_value, X.nrows()));
+        }
 
         particles
     }
@@ -320,7 +324,11 @@ impl PgBartState {
 
 /// Systematic resampling to sample new Particles according to a Particle's weight.
 #[inline(always)]
-pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec<Particle> {
+pub fn resample_particles(
+    rng: &mut impl Rng,
+    particles: &mut Vec<Particle>,
+    weights: &[f64],
+) -> Vec<Particle> {
     let num_particles = particles.len();
     let mut resampled_particles = Vec::with_capacity(num_particles);
 
@@ -328,7 +336,7 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
     resampled_particles.push(particles[0].clone());
 
     // Resample Particle indices and count number of occurences each index appears
-    let mut index_counts = systematic_resample(weights, num_particles - 1)
+    let mut index_counts = systematic_resample(rng, weights, num_particles - 1)
         .map(|idx| idx + 1)
         .fold(HashMap::with_capacity(num_particles), |mut acc, idx| {
             *acc.entry(idx).or_insert(0) += 1;
@@ -369,9 +377,12 @@ pub fn resample_particles(particles: &mut Vec<Particle>, weights: &[f64]) -> Vec
 ///
 /// Note: adapted from https://github.com/nchopin/particles
 #[inline(always)]
-fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Item = usize> + '_ {
+fn systematic_resample<'a>(
+    rng: &mut impl Rng,
+    weights: &'a [f64],
+    num_samples: usize,
+) -> impl Iterator<Item = usize> + 'a {
     // Generate a uniform random number and use it to create evenly spaced points
-    let mut rng = rand::thread_rng();
     let u = rng.gen::<f64>() / num_samples as f64;
 
     // Compute cumulative sum of Particle weights
@@ -404,10 +415,13 @@ fn systematic_resample(weights: &[f64], num_samples: usize) -> impl Iterator<Ite
 
 /// Sample a Particle proportional to its weight.
 #[inline(always)]
-pub fn select_particle(particles: &mut Vec<Particle>, weights: &[f64]) -> Particle {
-    let mut rng = thread_rng();
+pub fn select_particle(
+    rng: &mut impl Rng,
+    particles: &mut Vec<Particle>,
+    weights: &[f64],
+) -> Particle {
     let dist = WeightedIndex::new(weights).unwrap();
-    let index = dist.sample(&mut rng);
+    let index = dist.sample(rng);
 
     // Remove and return the selected particle, transferring ownership
     particles.swap_remove(index)

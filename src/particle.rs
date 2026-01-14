@@ -135,7 +135,13 @@ impl Particle {
     }
 
     /// Grows *this* Particle tree.
-    pub fn grow(&mut self, X: &Array2<f64>, state: &PgBartState) -> bool {
+    pub fn grow(
+        &mut self,
+        X: &Array2<f64>,
+        y: &Array1<f64>,
+        predictions_minus_old: &Array1<f64>,
+        state: &PgBartState,
+    ) -> bool {
         let node_index = match self.indices.pop_expansion_index() {
             Some(value) => value,
             None => {
@@ -209,11 +215,14 @@ impl Particle {
         }
 
         let left_value = {
-            let predictions = left_samples.iter().map(|&i| state.predictions[i]);
-            let observations = left_samples.iter().map(|&i| X[[i, feature]]);
+            // predictions from all OTHER trees (i.e. sum of trees excluding the one being updated)
+            let preds_other: Vec<f64> = left_samples.iter().map(|&i| predictions_minus_old[i]).collect();
+            // observed target y
+            let obs_y: Vec<f64> = left_samples.iter().map(|&i| y[i]).collect();
+
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
-                &observations.collect::<Vec<_>>(),
+                &preds_other,
+                &obs_y,
                 state.params.n_trees,
                 &state.params.leaf_sd,
                 &state.params.n_dim,
@@ -222,11 +231,12 @@ impl Particle {
         };
 
         let right_value = {
-            let predictions = right_samples.iter().map(|&i| state.predictions[i]);
-            let observations = right_samples.iter().map(|&i| X[[i, feature]]);
+            let preds_other: Vec<f64> = right_samples.iter().map(|&i| predictions_minus_old[i]).collect();
+            let obs_y: Vec<f64> = right_samples.iter().map(|&i| y[i]).collect();
+
             state.tree_ops.sample_leaf_value(
-                &predictions.collect::<Vec<_>>(),
-                &observations.collect::<Vec<_>>(),
+                &preds_other,
+                &obs_y,
                 state.params.n_trees,
                 &state.params.leaf_sd,
                 &state.params.n_dim,
