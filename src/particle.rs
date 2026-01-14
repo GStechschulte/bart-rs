@@ -243,10 +243,11 @@ impl Particle {
                 &state.params.response,
             )
         };
-
+        let left_count = left_samples.len();
+        let right_count = right_samples.len();
         match self
             .tree
-            .split_node(node_index, feature, split_value, left_value, right_value)
+            .split_node(node_index, feature, split_value, left_value, right_value, left_count, right_count)
         {
             Ok((left_index, right_index)) => {
                 self.indices.remove_index(node_index);
