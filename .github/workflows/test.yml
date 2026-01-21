@@ -24,7 +24,7 @@ jobs:
       - name: Install Python & Dependencies
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.10"
 
       # Optionally run your Rust tests here (or in the linux job itself)
       - name: Rust tests
