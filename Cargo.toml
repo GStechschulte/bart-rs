@@ -18,7 +18,7 @@ version = "0.1.2"
 edition = "2021"
 
 [lib]
-name = "pymc_bart_rs"
+name = "pymc_bart"
 crate-type = ["cdylib", "rlib"]
 
 [profile.release]

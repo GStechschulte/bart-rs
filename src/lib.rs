@@ -289,7 +289,7 @@ fn step<'py>(
 }
 
 #[pymodule]
-fn pymc_bart_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn pymc_bart(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
     m.add_class::<TreeDump>()?;
