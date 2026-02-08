@@ -35,12 +35,16 @@ use crate::data::ExternalData;
 use crate::ops::Response;
 use crate::pgbart::{PgBartSettings, PgBartState};
 use crate::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
+use crate::tree::DecisionTree;
 
 use std::str::FromStr;
 
+use ndarray::Array2;
 use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::prelude::*;
-
+use pyo3::conversion::ToPyObject;
+use pyo3::types::PyDict;
+use pyo3::types::PyList;
 /// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
 /// the Particle Gibbs sampler.
 ///
@@ -49,6 +53,156 @@ use pyo3::prelude::*;
 struct StateWrapper {
     state: PgBartState,
 }
+
+#[pyclass]
+#[derive(Clone)]
+struct TreeDump {
+    #[pyo3(get)]
+    split_feature: Vec<i32>,
+    #[pyo3(get)]
+    split_value: Vec<f64>,
+    #[pyo3(get)]
+    left_child: Vec<i32>,
+    #[pyo3(get)]
+    right_child: Vec<i32>,
+    #[pyo3(get)]
+    leaf_value: Vec<f64>,
+    #[pyo3(get)]
+    n_left: Vec<i32>,
+    #[pyo3(get)]
+    n_right: Vec<i32>,
+    #[pyo3(get)]
+    root_index: i32,
+}
+
+/// Plain parts used to ship a dump to Python in one batch conversion.
+#[derive(Clone)]
+struct TreeDumpParts {
+    split_feature: Vec<i32>,
+    split_value: Vec<f64>,
+    left_child: Vec<i32>,
+    right_child: Vec<i32>,
+    leaf_value: Vec<f64>,
+    n_left: Vec<i32>,
+    n_right: Vec<i32>,
+    root_index: i32,
+}
+
+impl TreeDump {
+    fn from_tree(tree: &DecisionTree, x_train: &Array2<f64>) -> Self {
+        let node_count = tree.feature.len();
+        let mut split_feature = Vec::with_capacity(node_count);
+        let mut split_value = Vec::with_capacity(node_count);
+        let mut left_child = Vec::with_capacity(node_count);
+        let mut right_child = Vec::with_capacity(node_count);
+        let mut leaf_value = Vec::with_capacity(node_count);
+        let mut n_left = vec![0; node_count];
+        let mut n_right = vec![0; node_count];
+
+        for idx in 0..node_count {
+            let is_leaf = tree.is_leaf(idx);
+            split_feature.push(if is_leaf {
+                -1
+            } else {
+                tree.feature[idx] as i32
+            });
+            split_value.push(if is_leaf { 0.0 } else { tree.threshold[idx] });
+            left_child.push(
+                tree.left_child(idx)
+                    .map(|value| value as i32)
+                    .unwrap_or(-1),
+            );
+            right_child.push(
+                tree.right_child(idx)
+                    .map(|value| value as i32)
+                    .unwrap_or(-1),
+            );
+            leaf_value.push(tree.value[idx]);
+        }
+
+        for sample in x_train.outer_iter() {
+            let mut node = 0;
+            loop {
+                if tree.is_leaf(node) {
+                    break;
+                }
+
+                let feature = tree.feature[node];
+                let threshold = tree.threshold[node];
+                if sample[feature] < threshold {
+                    n_left[node] += 1;
+                    if let Some(next_node) = tree.left_child(node) {
+                        node = next_node;
+                    } else {
+                        break;
+                    }
+                } else {
+                    n_right[node] += 1;
+                    if let Some(next_node) = tree.right_child(node) {
+                        node = next_node;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Self {
+            split_feature,
+            split_value,
+            left_child,
+            right_child,
+            leaf_value,
+            n_left,
+            n_right,
+            root_index: 0,
+        }
+    }
+
+    fn to_dump_parts(&self) -> TreeDumpParts {
+        TreeDumpParts {
+            split_feature: self.split_feature.clone(),
+            split_value: self.split_value.clone(),
+            left_child: self.left_child.clone(),
+            right_child: self.right_child.clone(),
+            leaf_value: self.leaf_value.clone(),
+            n_left: self.n_left.clone(),
+            n_right: self.n_right.clone(),
+            root_index: self.root_index,
+        }
+    }
+}
+
+impl IntoPy<PyObject> for TreeDumpParts {
+    fn into_py(self, py: Python<'_>) -> PyObject {
+        let dict = PyDict::new_bound(py);
+        dict.set_item("split_feature", self.split_feature).unwrap();
+        dict.set_item("split_value", self.split_value).unwrap();
+        dict.set_item("left_child", self.left_child).unwrap();
+        dict.set_item("right_child", self.right_child).unwrap();
+        dict.set_item("leaf_value", self.leaf_value).unwrap();
+        dict.set_item("n_left", self.n_left).unwrap();
+        dict.set_item("n_right", self.n_right).unwrap();
+        dict.set_item("root_index", self.root_index).unwrap();
+        dict.into_py(py)
+    }
+}
+
+impl ToPyObject for TreeDumpParts {
+    fn to_object(&self, py: Python<'_>) -> PyObject {
+        self.clone().into_py(py)
+    }
+}
+
+impl PgBartState {
+    /// Snapshot of the current tree ensemble only (excludes transient proposal particles).
+    fn tree_ensemble_dump(&self, x_train: &Array2<f64>) -> Vec<TreeDumpParts> {
+        self.trees()
+            .map(|tree| TreeDump::from_tree(tree, x_train).to_dump_parts())
+            .collect()
+    }
+}
+
 
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
@@ -108,7 +262,11 @@ fn step<'py>(
     py: Python<'py>,
     wrapper: &mut StateWrapper,
     tune: bool,
-) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>) {
+) -> (
+    Bound<'py, PyArray1<f64>>,
+    Bound<'py, PyArray1<i32>>,
+    Bound<'py, PyList>,
+) {
     // Update whether or not `pm.sampler` is in tuning phase or not
     wrapper.state.tune = tune;
     // Run the Particle Gibbs sampler
@@ -122,13 +280,19 @@ fn step<'py>(
     let variable_inclusion = wrapper.state.variable_inclusion().clone();
     let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
 
-    (py_preds_array, py_variable_inclusion_array)
+    let x_train = wrapper.state.data.X();
+    // One GIL-bound list construction instead of per-tree Py::new
+    let tree_dump_parts = wrapper.state.tree_ensemble_dump(x_train.as_ref());
+    let py_tree_dumps = PyList::new_bound(py, &tree_dump_parts);
+
+    (py_preds_array, py_variable_inclusion_array, py_tree_dumps)
 }
 
 #[pymodule]
 fn pymc_bart(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(initialize, m)?)?;
     m.add_function(wrap_pyfunction!(step, m)?)?;
+    m.add_class::<TreeDump>()?;
 
     Ok(())
 }

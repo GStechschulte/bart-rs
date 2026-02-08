@@ -8,12 +8,22 @@ use std::cmp::Ordering;
 /// A `DecisionTree` is an array-based implementation of the binary decision tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecisionTree {
-    /// Stores the feature index for splitting at the i'th node.
+    /// Feature index for split nodes.
     pub feature: Vec<usize>,
-    /// Stores the threshold value for the i'th node split.
+    /// Threshold values for split nodes.
     pub threshold: Vec<f64>,
-    /// Stores output values for the i'th node
+    /// Prediction values stored in leaf nodes.
     pub value: Vec<f64>,
+    /// Left child indices (-1 for none).
+    pub left_child: Vec<i32>,
+    /// Right child indices (-1 for none).
+    pub right_child: Vec<i32>,
+    /// Parent indices (-1 for root).
+    pub parent: Vec<i32>,
+    /// Optional left counts for excluded weighting.
+    pub n_left: Vec<i32>,
+    /// Optional right counts for excluded weighting.
+    pub n_right: Vec<i32>,
 }
 
 /// Represents errors related to binary decision tree operations.
@@ -53,6 +63,11 @@ impl DecisionTree {
             feature: vec![0],
             threshold: vec![0.0],
             value: vec![init_value],
+            left_child: vec![-1],
+            right_child: vec![-1],
+            n_left: vec![0],
+            n_right: vec![0],
+            parent: vec![-1],
         }
     }
 
@@ -63,27 +78,24 @@ impl DecisionTree {
         self.feature.push(feature);
         self.threshold.push(threshold);
         self.value.push(value);
+        self.left_child.push(-1);
+        self.right_child.push(-1);
+        self.n_left.push(0);
+        self.n_right.push(0);
+        self.parent.push(-1);
         node_id
     }
 
     /// Computes the left child index of _this_ node.
     pub fn left_child(&self, index: usize) -> Option<usize> {
-        let left_index = index * 2 + 1;
-        if left_index < self.feature.len() {
-            Some(left_index)
-        } else {
-            None
-        }
+        let v = self.left_child[index];
+        if v >= 0 { Some(v as usize) } else { None }
     }
 
     /// Computes the right child index of _this_ node.
     pub fn right_child(&self, index: usize) -> Option<usize> {
-        let right_index = index * 2 + 2;
-        if right_index < self.feature.len() {
-            Some(right_index)
-        } else {
-            None
-        }
+        let v = self.right_child[index];
+        if v >= 0 { Some(v as usize) } else { None }
     }
 
     /// Checks whether the passed index is a leaf node.
@@ -97,14 +109,12 @@ impl DecisionTree {
     /// Computes the depth of _this_ node in the `DecisionTree`.
     #[inline]
     pub fn node_depth(&self, index: usize) -> usize {
-        let mut depth = 0;
-        let mut current_index = index;
-
-        while current_index != 0 {
+        let mut depth = 0usize;
+        let mut cur = index as i32;
+        while cur > 0 {
             depth += 1;
-            current_index = (current_index - 1) / 2;
+            cur = self.parent[cur as usize];
         }
-
         depth
     }
 
@@ -116,6 +126,8 @@ impl DecisionTree {
         threshold: f64,
         left_value: f64,
         right_value: f64,
+        left_count: usize,
+        right_count: usize,
     ) -> Result<(usize, usize), TreeError> {
         if node_index >= self.value.len() {
             return Err(TreeError::InvalidNodeIndex);
@@ -133,6 +145,17 @@ impl DecisionTree {
         let left_child_index = self.add_node(0, 0.0, left_value);
         let right_child_index = self.add_node(0, 0.0, right_value);
 
+        // set explicit pointers
+        self.left_child[node_index] = left_child_index as i32;
+        self.right_child[node_index] = right_child_index as i32;
+
+        // optional counts for excluded weighting
+        self.n_left[node_index] = left_count as i32;
+        self.n_right[node_index] = right_count as i32;
+
+        self.parent[left_child_index] = node_index as i32;
+        self.parent[right_child_index] = node_index as i32;
+        
         Ok((left_child_index, right_child_index))
     }
 
