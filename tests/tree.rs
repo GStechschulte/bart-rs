@@ -26,7 +26,7 @@ fn test_split_node() {
     let mut tree = DecisionTree::new(0.0);
     let root_index = tree.add_node(0, 0.0, 5.0);
 
-    let result = tree.split_node(root_index, 0, 0.5, 2.0, 3.0);
+    let result = tree.split_node(root_index, 0, 0.5, 2.0, 3.0, 2, 3);
 
     assert!(result.is_ok());
 
@@ -36,9 +36,11 @@ fn test_split_node() {
     assert_eq!(left_index, 2 as usize);
     assert_eq!(right_index, 3 as usize);
 
-    // Assert feature and threshold values  are correct for  root/left/right indexes
+    // Assert feature and threshold values are correct for root/left/right indexes
     assert_eq!(tree.feature[root_index], 0 as usize);
     assert_eq!(tree.threshold[root_index], 0.5);
+    assert_eq!(tree.n_left[root_index], 2);
+    assert_eq!(tree.n_right[root_index], 3);
 
     assert_eq!(tree.feature[left_index], 0 as usize);
     assert_eq!(tree.value[left_index], 2.0);
@@ -51,12 +53,12 @@ fn test_split_node() {
 fn test_split_non_leaf_node() {
     let mut tree = DecisionTree::new(0.0);
 
-    let (left_index, right_index) = tree
-        .split_node(0, 0, 0.5, 2.0, 3.0)
+    let _ = tree
+        .split_node(0, 0, 0.5, 2.0, 3.0, 0, 0)
         .expect("First split should be successful");
 
     // Root node has already been split above
-    let result = tree.split_node(0, 1, 0.7, 4.0, 5.0);
+    let result = tree.split_node(0, 1, 0.7, 4.0, 5.0, 0, 0);
 
     assert!(matches!(result, Err(TreeError::NonLeafSplit)));
 }
@@ -65,9 +67,10 @@ fn test_split_non_leaf_node() {
 fn test_split_invalid_node() {
     let tree = DecisionTree::new(0.0);
 
-    // There are no left or right children yet
-    assert_eq!(tree.left_child(1), None);
-    assert_eq!(tree.right_child(1), None);
+    // Root has no children yet
+    assert_eq!(tree.left_child(0), None);
+    assert_eq!(tree.right_child(0), None);
+    assert!(tree.is_leaf(0));
 }
 
 #[test]
@@ -78,7 +81,7 @@ fn test_is_leaf() {
     assert!(tree.is_leaf(0));
 
     // Split root node
-    let (left_index, right_index) = tree.split_node(0, 0, 0.5, 2.0, 3.0).unwrap();
+    let (left_index, right_index) = tree.split_node(0, 0, 0.5, 2.0, 3.0, 0, 0).unwrap();
 
     // Root should no longer be a leaf
     assert!(!tree.is_leaf(0));

@@ -8,14 +8,22 @@ use std::cmp::Ordering;
 /// A `DecisionTree` is an array-based implementation of the binary decision tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecisionTree {
+    /// Feature index for split nodes.
     pub feature: Vec<usize>,
+    /// Threshold values for split nodes.
     pub threshold: Vec<f64>,
+    /// Prediction values stored in leaf nodes.
     pub value: Vec<f64>,
+    /// Left child indices (-1 for none).
     pub left_child: Vec<i32>,
+    /// Right child indices (-1 for none).
     pub right_child: Vec<i32>,
+    /// Parent indices (-1 for root).
     pub parent: Vec<i32>,
-    pub n_left: Vec<i32>,   // optional, if you want excluded weighting
-    pub n_right: Vec<i32>,  // optional
+    /// Optional left counts for excluded weighting.
+    pub n_left: Vec<i32>,
+    /// Optional right counts for excluded weighting.
+    pub n_right: Vec<i32>,
 }
 
 /// Represents errors related to binary decision tree operations.

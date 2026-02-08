@@ -1,7 +1,6 @@
 //! Split rule trait definitions and implementations for decision trees. The module
 //! supports sampling split values from a set of candidates and dividing data points based on //! the chosen split value.
 
-use std::collections::HashSet;
 use std::f64;
 use std::iter::Iterator;
 
@@ -68,7 +67,7 @@ impl SplitRule for OneHotSplit {
         }
 
         let unique: std::collections::HashSet<i32> = iter.chain(std::iter::once(first)).collect();
-        let mut unique_vals: Vec<i32> = unique.into_iter().collect();
+        let unique_vals: Vec<i32> = unique.into_iter().collect();
         if unique_vals.is_empty() {
             return None;
         }

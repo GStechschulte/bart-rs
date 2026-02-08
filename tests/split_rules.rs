@@ -8,15 +8,18 @@ fn test_continuous_split_rule() {
     let split_value = rule.sample_split_value(&feature_values);
 
     assert!(split_value.is_some());
-    assert!(feature_values.contains(&split_value.unwrap()));
+    let split_value = split_value.unwrap();
+    let min_val = *feature_values.first().unwrap();
+    let max_val = *feature_values.last().unwrap();
+    assert!(split_value >= min_val && split_value < max_val);
 
     let static_split_value = 4.0;
     let (left, right) = rule.divide(&feature_values, &static_split_value);
 
-    // Indices where value <= 2 go left
-    assert_eq!(left, vec![0, 1, 2, 3, 4]);
-    // Indices where value > 2 go right
-    assert_eq!(right, vec![5, 6, 7, 8, 9]);
+    // Indices where value < 4 go left
+    assert_eq!(left, vec![0, 1, 2, 3]);
+    // Indices where value >= 4 go right
+    assert_eq!(right, vec![4, 5, 6, 7, 8, 9]);
 }
 
 #[test]

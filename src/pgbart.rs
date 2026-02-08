@@ -7,8 +7,6 @@
 
 use core::f64;
 use std::collections::HashMap;
-use std::iter::from_fn;
-
 use ndarray::{Array1, Array2};
 use rand::distributions::WeightedIndex;
 
@@ -106,6 +104,7 @@ pub struct PgBartState {
     pub lower: usize,
     /// Current iteration of tree growing (includes tuning and draws).
     pub iter: usize,
+    /// RNG for reproducible sampling.
     pub rng: StdRng,
 }
 
@@ -166,9 +165,6 @@ impl PgBartState {
     pub fn step(&mut self) {
         // At each step, reset variable inclusion counter to zero
         self.variable_inclusion.fill(0);
-
-        // Use a single RNG for the entire step to keep sampling reproducible
-        let rng = &mut self.rng;
 
         // Logic for determining how many trees to update in a batch given tuning and the
         // batch size

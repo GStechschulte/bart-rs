@@ -1,6 +1,7 @@
 use pymc_bart::particle::{Particle, SampleIndices, Weight};
 use pymc_bart::pgbart::{normalize_weights, resample_particles, select_particle};
 use pymc_bart::tree::DecisionTree;
+use rand::{rngs::StdRng, SeedableRng};
 
 fn create_test_particles() -> Vec<Particle> {
     vec![
@@ -47,12 +48,14 @@ fn test_normalize_weights() {
 #[test]
 fn test_select_particle() {
     let mut particles = create_test_particles();
+    let original_particles = particles.clone();
     let normalized_weights = normalize_weights(&particles);
-    let selected_particles = select_particle(&mut particles, &normalized_weights);
+    let mut rng = StdRng::seed_from_u64(0);
+    let selected_particle = select_particle(&mut rng, &mut particles, &normalized_weights);
 
     // Assert that the selected particle is one of the original particles
     assert!(
-        particles.contains(&selected_particles),
+        original_particles.contains(&selected_particle),
         "Selected particle is not valid"
     );
 }
@@ -60,20 +63,23 @@ fn test_select_particle() {
 #[test]
 fn test_resample_particles() {
     let mut particles = create_test_particles();
+    let original_particles = particles.clone();
+    let original_len = particles.len();
     let normalized_weights = normalize_weights(&particles);
+    let mut rng = StdRng::seed_from_u64(0);
 
     // Resample particles based on normalized weights
-    let resampled_particles = resample_particles(&mut particles, &normalized_weights);
-
+    let resampled_particles =
+        resample_particles(&mut rng, &mut particles, &normalized_weights[1..]);
     // Assert that the number of resampled particles matches the original count
     assert_eq!(
         resampled_particles.len(),
-        particles.len(),
+        original_len,
         "Resampled particle count does not match"
     );
 
     // Assert that all resampled particles are valid (i.e., they exist in the original list)
     for p in &resampled_particles {
-        assert!(particles.contains(p), "Resampled particle is not valid");
+        assert!(original_particles.contains(p), "Resampled particle is not valid");
     }
 }
