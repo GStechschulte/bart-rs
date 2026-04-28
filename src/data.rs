@@ -1,58 +1,54 @@
-//! Trait implementation to handle data provided by the Python user.
+use numpy::ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
-use std::{
-    os::raw::{c_double, c_void},
-    rc::Rc,
-};
-
-use ndarray::{Array1, Array2};
-use numpy::{PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
-
-/// Interface for interaction with data provided by the Python user.
-pub trait PyData {
-    #![allow(non_snake_case)]
-    /// Covariate matrix
-    fn X(&self) -> Rc<Array2<f64>>;
-    /// Response (target) vector
-    fn y(&self) -> Rc<Array1<f64>>;
-    /// Evaluate log-probability given data `x`
-    fn evaluate_logp(&self, x: Array1<f64>) -> f64;
+/// Zero-copy view into training data.
+pub struct DataView<'a> {
+    pub x: ArrayView2<'a, f64>,
+    pub y: ArrayView1<'a, f64>,
 }
 
-// extern keyword defines the variable (or function) defined in some other program
-// that the Rust executable will be linked with
-type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
+impl<'a> DataView<'a> {
+    pub fn new(x: ArrayView2<'a, f64>, y: ArrayView1<'a, f64>) -> Self {
+        debug_assert_eq!(
+            x.nrows(),
+            y.len(),
+            "X rows ({}) must match Y length ({})",
+            x.nrows(),
+            y.len()
+        );
+        Self { x, y }
+    }
 
-/// Container used to store external data passed by the Python user.
-pub struct ExternalData {
-    X: Rc<Array2<f64>>,
-    y: Rc<Array1<f64>>,
-    logp: LogpFunc,
-}
+    pub fn n_samples(&self) -> usize {
+        self.x.nrows()
+    }
 
-impl ExternalData {
-    /// Creates a new `ExternalData` struct.
-    pub fn new(X: PyReadonlyArray2<f64>, y: PyReadonlyArray1<f64>, logp: usize) -> Self {
-        let logp: LogpFunc = unsafe { std::mem::transmute(logp as *const c_void) };
-
-        Self {
-            X: Rc::new(X.to_owned_array()),
-            y: Rc::new(y.to_owned_array()),
-            logp,
-        }
+    pub fn n_features(&self) -> usize {
+        self.x.ncols()
     }
 }
 
-impl PyData for ExternalData {
-    fn X(&self) -> Rc<Array2<f64>> {
-        Rc::clone(&self.X)
+/// Owned data for storing in long-lived structs (e.g. Python bindings).
+#[derive(Clone, Debug)]
+pub struct OwnedData {
+    pub x: Array2<f64>,
+    pub y: Array1<f64>,
+}
+
+impl OwnedData {
+    pub fn new(x: Array2<f64>, y: Array1<f64>) -> Self {
+        debug_assert_eq!(x.nrows(), y.len());
+        Self { x, y }
     }
 
-    fn y(&self) -> Rc<Array1<f64>> {
-        Rc::clone(&self.y)
+    pub fn view(&self) -> DataView<'_> {
+        DataView::new(self.x.view(), self.y.view())
     }
 
-    fn evaluate_logp(&self, x: Array1<f64>) -> f64 {
-        unsafe { (self.logp)(x.as_ptr(), x.len()) }
+    pub fn n_samples(&self) -> usize {
+        self.x.nrows()
+    }
+
+    pub fn n_features(&self) -> usize {
+        self.x.ncols()
     }
 }

@@ -1,134 +1,210 @@
-//   Copyright 2024 The PyMC Developers
-//
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
-#![warn(missing_docs)]
-#![allow(non_snake_case)]
+use std::ffi::c_double;
 
-//! pg_bart provides an extensible implementation of Bayesian Additive
-//! Regression Trees (BART). BART is a non-parametric method to
-//! approximate functions based on the sum of many trees where
-//! priors are used to regularize inference, mainly by restricting
-//! a tree's learning capacity so that no individual tree is able
-//! to explain the data, but rather the sum of trees. Inference is
-//! performed using a sampler inspired by the Particle Gibbs method
-//! introduced by Lakshminarayanan et al. [2015].
-
+pub mod config;
 pub mod data;
-pub mod math;
-pub mod ops;
+pub mod forest;
+pub mod kernel;
 pub mod particle;
-pub mod pgbart;
-pub mod split_rules;
+pub mod resampling;
+pub mod response;
+pub mod smc;
+pub mod splitting;
+pub mod state;
 pub mod tree;
+pub mod update;
+pub mod weight;
 
-use crate::data::ExternalData;
-use crate::ops::Response;
-use crate::pgbart::{PgBartSettings, PgBartState};
-use crate::split_rules::{ContinuousSplit, OneHotSplit, SplitRuleType};
+use crate::config::BartConfig;
+use crate::data::OwnedData;
+use crate::kernel::{BartKernel, ErasedKernel, SamplingAlgorithm};
+use crate::resampling::SystematicResampling;
+use crate::splitting::{ContinuousSplit, SplitRules};
+use crate::weight::PyMCWeightFn;
 
-use std::str::FromStr;
-
-use numpy::{PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    PyArray1, PyReadonlyArray,
+    ndarray::{Array1, Ix1, Ix2},
+};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
-/// `StateWrapper` wraps around `PgBartState` to hold state pertaining to
-/// the Particle Gibbs sampler.
-///
-/// This class is `unsendable`, i.e., it cannot be sent across threads safely.
-#[pyclass(unsendable)]
-struct StateWrapper {
-    state: PgBartState,
-}
+type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
-#[pyfunction]
-#[allow(clippy::too_many_arguments)]
-fn initialize(
-    X: PyReadonlyArray2<f64>,
-    y: PyReadonlyArray1<f64>,
-    logp: usize,
-    alpha: f64,
-    beta: f64,
-    split_prior: PyReadonlyArray1<f64>,
-    split_rules: Vec<String>,
-    response: String,
+#[pyclass]
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct PyBartSettings {
     n_trees: usize,
     n_particles: usize,
-    leaf_sd: Vec<f64>,
-    batch: (f64, f64),
-    leaves_shape: usize,
-) -> PyResult<StateWrapper> {
-    // Heap allocation because size of 'ExternalData' is not known at compile time
-    let data = Box::new(ExternalData::new(X, y, logp));
-    let response = Response::from_str(&response).unwrap();
-    let mut rules: Vec<SplitRuleType> = Vec::new();
-
-    for rule in split_rules {
-        let split = match rule.as_str() {
-            "ContinuousSplit" => SplitRuleType::Continuous(ContinuousSplit),
-            "OneHotSplit" => SplitRuleType::OneHot(OneHotSplit),
-            _ => {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                    "Unknown split type: {}",
-                    rule
-                )))
-            }
-        };
-        rules.push(split);
-    }
-
-    let params = PgBartSettings::new(
-        n_trees,
-        n_particles,
-        alpha,
-        beta,
-        leaf_sd,
-        batch,
-        split_prior.to_vec().unwrap(),
-        response,
-        rules,
-        leaves_shape,
-    );
-    let state = PgBartState::new(params, data);
-
-    Ok(StateWrapper { state })
+    max_depth: u8,
+    alpha: f64,
+    beta: f64,
+    sigma: f64,
+    split_prior: Vec<f64>,
+    split_rules: Vec<String>,
+    response_rule: String,
+    resampling_rule: String,
+    batch_tune: f64,
+    batch_post: f64,
+    seed: u64,
 }
 
-#[pyfunction]
-fn step<'py>(
-    py: Python<'py>,
-    wrapper: &mut StateWrapper,
-    tune: bool,
-) -> (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>) {
-    // Update whether or not `pm.sampler` is in tuning phase or not
-    wrapper.state.tune = tune;
-    // Run the Particle Gibbs sampler
-    wrapper.state.step();
+#[pymethods]
+impl PyBartSettings {
+    #[new]
+    #[pyo3(signature = (
+        n_trees,
+        n_particles,
+        max_depth,
+        alpha,
+        beta,
+        sigma,
+        split_prior,
+        split_rules,
+        response_rule,
+        resampling_rule,
+        batch_tune = 0.1,
+        batch_post = 0.1,
+        seed = 0
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        n_trees: usize,
+        n_particles: usize,
+        max_depth: u8,
+        alpha: f64,
+        beta: f64,
+        sigma: f64,
+        split_prior: Vec<f64>,
+        split_rules: Vec<String>,
+        response_rule: String,
+        resampling_rule: String,
+        batch_tune: f64,
+        batch_post: f64,
+        seed: u64,
+    ) -> Self {
+        Self {
+            n_trees,
+            n_particles,
+            max_depth,
+            alpha,
+            beta,
+            sigma,
+            split_prior,
+            split_rules,
+            response_rule,
+            resampling_rule,
+            batch_tune,
+            batch_post,
+            seed,
+        }
+    }
+}
 
-    // Get predictions (sum of trees) and convert to PyArray
-    let predictions = wrapper.state.predictions();
-    let py_preds_array = PyArray1::from_array_bound(py, &predictions.view());
+#[pyclass(unsendable)]
+struct PySampler {
+    kernel: Box<dyn ErasedKernel>,
+    state: Option<crate::state::BartState>,
+    rng: SmallRng,
+}
 
-    // Get variable inclusion counter and convert to PyArray
-    let variable_inclusion = wrapper.state.variable_inclusion().clone();
-    let py_variable_inclusion_array = PyArray1::from_vec_bound(py, variable_inclusion);
+#[pymethods]
+impl PySampler {
+    #[staticmethod]
+    fn init(
+        x: PyReadonlyArray<f64, Ix2>,
+        y: PyReadonlyArray<f64, Ix1>,
+        model: usize,
+        settings: PyBartSettings,
+    ) -> PyResult<PySampler> {
+        let x_data = x.as_array().to_owned();
+        let y_data = y.as_array().to_owned();
 
-    (py_preds_array, py_variable_inclusion_array)
+        let logp_func: LogpFunc = unsafe { std::mem::transmute(model as *const ()) };
+        let weight_fn = unsafe { PyMCWeightFn::from_raw(logp_func) };
+
+        // Parse split rules
+        let split_rules: Vec<SplitRules> = settings
+            .split_rules
+            .iter()
+            .map(|rule| SplitRules::from_name(rule).map_err(PyValueError::new_err))
+            .collect::<PyResult<Vec<SplitRules>>>()?;
+
+        // Fill with continuous splits if not enough rules provided
+        let n_features = x_data.ncols();
+        let split_rules = if split_rules.len() < n_features {
+            let mut rules = split_rules;
+            rules.resize(n_features, SplitRules::Continuous(ContinuousSplit));
+            rules
+        } else {
+            split_rules
+        };
+
+        let config = BartConfig {
+            n_trees: settings.n_trees,
+            n_particles: settings.n_particles,
+            max_depth: settings.max_depth,
+            alpha: settings.alpha,
+            beta: settings.beta,
+            sigma: settings.sigma,
+            min_samples_leaf: 2,
+            splitting_probs: if settings.split_prior.is_empty() {
+                None
+            } else {
+                Some(Array1::from_vec(settings.split_prior))
+            },
+            batch_tune: settings.batch_tune,
+            batch_post: settings.batch_post,
+        };
+
+        let data = OwnedData::new(x_data, y_data);
+
+        let kernel = BartKernel {
+            split_rules,
+            resampling: SystematicResampling,
+            weight_fn,
+            config,
+            data,
+        };
+
+        let mut rng = SmallRng::seed_from_u64(settings.seed);
+        let state = SamplingAlgorithm::init(&kernel, &mut rng);
+
+        Ok(PySampler {
+            kernel: Box::new(kernel),
+            state: Some(state),
+            rng,
+        })
+    }
+
+    #[pyo3(signature = (tune = None))]
+    fn step<'py>(
+        &mut self,
+        py: Python<'py>,
+        tune: Option<bool>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let mut state = self
+            .state
+            .take()
+            .ok_or_else(|| PyValueError::new_err("Sampler state is missing (internal error)"))?;
+
+        if let Some(t) = tune {
+            state.tune = t;
+        }
+
+        let (new_state, _info) = self.kernel.step(&mut self.rng, state);
+
+        let result = PyArray1::from_slice(py, new_state.predictions.as_slice().unwrap());
+        self.state = Some(new_state);
+        Ok(result)
+    }
 }
 
 #[pymodule]
 fn pymc_bart(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(initialize, m)?)?;
-    m.add_function(wrap_pyfunction!(step, m)?)?;
-
+    m.add_class::<PyBartSettings>()?;
+    m.add_class::<PySampler>()?;
     Ok(())
 }

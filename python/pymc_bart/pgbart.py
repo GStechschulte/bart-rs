@@ -12,6 +12,8 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
+import math
+
 from time import perf_counter
 from typing import Optional, Tuple
 
@@ -26,7 +28,7 @@ from pytensor.graph.basic import Variable
 
 from pymc_bart.bart import BARTRV
 from pymc_bart.compile_pymc import CompiledPyMCModel
-from pymc_bart.pymc_bart import initialize, step
+from pymc_bart.pymc_bart import PyBartSettings, PySampler
 
 
 class PGBART(ArrayStepShared):
@@ -94,8 +96,6 @@ class PGBART(ArrayStepShared):
         shape = initial_point[value_bart.name].shape
         self.shape = 1 if len(shape) == 1 else shape[0]
 
-        print(f"shape: {shape}, self.shape: {self.shape}")
-
         # Set trees_shape (dim for separate tree structures)
         # and leaves_shape (dim for leaf node values)
         # One of the two is always one, the other equal to self.shape
@@ -106,6 +106,8 @@ class PGBART(ArrayStepShared):
             self.alpha_vec = np.ones(self.X.shape[1])
         else:
             self.alpha_vec = self.bart.split_prior
+
+        splitting_probs = np.cumsum(self.alpha_vec)
 
         if self.bart.split_rules:
             self.split_rules = self.bart.split_rules
@@ -122,43 +124,82 @@ class PGBART(ArrayStepShared):
         else:
             self.leaf_sd *= self.bart.Y.std() / self.m**0.5
 
+        init_leaf_value = np.mean(self.bart.Y) / self.bart.m
+
         # Compile the PyMC model to create a C callback. This function pointer is
         # passed to Rust and called using Rust's foreign function interface (FFI)
         self.compiled_pymc_model = CompiledPyMCModel(model, vars)
 
-        # Initialize the Rust Particle-Gibbs sampler state
-        self.state = initialize(
-            X=self.X,
-            y=self.bart.Y,
-            logp=self.compiled_pymc_model.get_function_pointer(),
-            alpha=self.bart.alpha,
-            beta=self.bart.beta,
-            split_prior=self.alpha_vec,
-            split_rules=self.split_rules,
-            response=self.bart.response,
+        # Set a random u64 seed for reproducibility
+        # seed = np.random.randint(2 ** 31 - 1)
+
+        # TODO: Initialize the settings that correspond to the BART extension
+        # if self.bart.response == "constant":
+        #     settings = PyBartSettings.Constant()
+        # elif self.bart_response == "motr":
+        #     settings = PyBartSettings.Motr()
+        # elif self.bart_response == "tvp":
+        #     settings = PyBartSettings.Tvp()
+        # elif self.bart_response == "gp":
+        #     settings = PyBartSettings.Gp()
+
+        max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
+
+        split_rules = list(self.bart.split_rules.values())
+
+        # Extract scalar sigma from leaf_sd array
+        sigma = float(self.leaf_sd.ravel()[0])
+
+        # Build the Particle Gibbs sampler
+        settings = PyBartSettings(
             n_trees=self.bart.m,
             n_particles=num_particles,
-            leaf_sd=self.leaf_sd,
-            batch=batch,
-            leaves_shape=self.leaves_shape,
+            max_depth=max_depth,
+            alpha=self.bart.alpha,
+            beta=self.bart.beta,
+            sigma=sigma,
+            split_prior=splitting_probs.tolist(),
+            split_rules=split_rules,
+            response_rule=self.bart.response,
+            resampling_rule="systematic",
+            batch_tune=batch[0],
+            batch_post=batch[1],
+        )
+
+        # INFO: Only at the end do we return the State structure back to Python to avoid
+        #       overhead. Otherwise, we would need to create create a PyState to wrap
+        #       around to contain the PgBartState in order to return the results back to the user.
+        #
+        # pg = PySampler(...)
+        # state = pg.init(...)
+        # new_state, info = pg.step(rng, state)
+
+        self.pg_bart = PySampler.init(
+            x=np.asfortranarray(self.X),
+            y=self.bart.Y,
+            model=self.compiled_pymc_model.get_function_pointer(),
+            settings=settings
         )
 
         self.tune = True
         super().__init__(vars, self.compiled_pymc_model.shared)
 
     def astep(self, _):
-        # Record time to quantify performance improvements
+    #     # Record time to quantify performance improvements
         t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
-        sum_trees, variable_inclusion = step(self.state, self.tune)
+    #     sum_trees, variable_inclusion = step(self.state, self.tune)
+        sum_trees = self.pg_bart.step(self.tune)
         t1 = perf_counter()
 
         stats = {
-            "variable_inclusion": variable_inclusion,
+            "variable_inclusion": np.array([0.0]),
             "tune": self.tune,
             "time": t1 - t0,
         }
+
         return sum_trees, [stats]
+
 
     @staticmethod
     def competence(var, has_grad):
@@ -167,3 +208,35 @@ class PGBART(ArrayStepShared):
         if isinstance(dist, BARTRV):
             return Competence.IDEAL
         return Competence.INCOMPATIBLE
+
+
+def calculate_max_tree_depth(alpha: float, beta: float, probs_leaf: float) -> int:
+    """Calculates the maximum tree depth for which the probability of a node
+    remaining a leaf node is given by the `probs_leaf`.
+
+    Parameters
+    ----------
+    alpha : float
+        Base prior probability parameter, between 0 and 1.
+    beta : float
+        Prior probability decaying factor, greater than or equal to 0.
+    probs_leaf : float
+        Probability a node remains a leaf node.
+
+    Returns
+    -------
+    int : The calculated maximum tree depth
+    """
+    if not (0 < alpha < 1):
+        raise ValueError(f"alpha must be between 0 and 1. Received {alpha}")
+    if not (0 < probs_leaf < 1):
+        raise ValueError(f"alpha must be between 0 and 1. Received {alpha}")
+    if beta <= 0:
+        raise ValueError(f"beta must be greater than 0. Received {beta}")
+
+    probs_not_leaf = 1 - probs_leaf
+    reciprocal = 1 / probs_not_leaf
+    term = reciprocal * alpha
+    exponent = 1.0 / beta
+    depth = int(math.pow(term, exponent) - 1)
+    return depth

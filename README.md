@@ -1,6 +1,6 @@
 # PyMC-BART-rs
 
-Rust implementation of [PyMC-BART](https://github.com/pymc-devs/pymc-bart). PyMC-BART extends the [PyMC](https://github.com/pymc-devs/pymc) probabilistic programming framework to be able to define and solve models including a Bayesian Additive Regression Tree (BART) random variable. PyMC-BART also includes a few helpers function to aid with the interpretation of those models and perform variable selection.
+High-performance Rust implementation of [PyMC-BART](https://github.com/pymc-devs/pymc-bart). This implementation provides an optimized Particle Gibbs BART (PGBART) sampler designed for performance and extensibility.
 
 ## Table of Contents
 
@@ -30,9 +30,3 @@ with pm.Model() as model:
     ...
     idata = pm.sample()
 ```
-
-## Modifications
-
-The core Particle Gibbs (PG) sampling algorithm for BART remains the same in this Rust implementation as the original Python implementation. What differs is the choice of data structure to represent the Binary Decision Tree.
-
-A `DecisionTree` structure is implemented as a number of parallel arrays. The i-th element of each array holds information about node `i`. The zero'th node is the tree's root. Some of the arrays only apply to either leaves or split nodes. In this case, the values of the nodes of the other arrays are arbitrary. For example, `feature` and `threshold` arrays only apply to split nodes. The values for leaf nodes in these arrays are therefore arbitrary.

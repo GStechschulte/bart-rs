@@ -4,21 +4,30 @@ build-backend = "maturin"
 
 [project]
 name = "pymc_bart_rs"
+version = "0.1.0"
 description = "Rust implementation of Bayesian Additive Regression Trees for Probabilistic programming with PyMC"
-requires-python = ">=3.8, <3.13"
+requires-python = ">=3.10, <3.13"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dynamic = ["version"]
 
-dependencies = ["numba >= 0.60.0", "pymc >= 5.19.1", "arviz >= 0.20.0"]
+
+dependencies = [
+    "numba >= 0.60.0",
+    "pymc >= 5.19.1",
+    "arviz >= 0.20.0",
+    "maturin>=1.8.7",
+]
 
 [project.optional-dependencies]
-# all = ["numba >= 0.60.0", "pymc >= 5.19.1", "arviz >= 0.20.0"]
 dev = ["pre-commit>=4.0.1", "pytest-cov>=6.0.0", "pytest>=8.3.4", "ruff>=0.8.3"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 python-source = "python"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
