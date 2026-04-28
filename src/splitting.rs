@@ -1,24 +1,23 @@
-//! Split rule trait definitions and implementations for decision trees. The module
-//! supports sampling split values from a set of candidates and dividing data points based on
-//! the chosen split value.
+//! Split rule trait definitions and implementations for decision trees.
+//!
+//! Supports sampling split values from candidates and dividing data points
+//! based on the chosen split value.
 use std::collections::HashSet;
 
 use numpy::Ix2;
 use numpy::ndarray::Array;
-use pyo3::PyResult;
-use pyo3::exceptions::PyValueError;
 use rand::Rng;
 
+/// Trait for split rule strategies.
 pub trait SplitRule {
-    // The data type associated with the split rule strategy
     type Value: Copy;
 
-    /// Samples a split value from the candidate points
+    /// Sample a split value from the candidate points.
     fn sample_split_value<I>(&self, rng: &mut impl Rng, candidates: I) -> Option<Self::Value>
     where
         I: Iterator<Item = Self::Value>;
 
-    /// Splits data indices based on feature values and threshold
+    /// Split data indices based on feature values and threshold.
     fn split_data_indices<I>(
         &self,
         data: &Array<f64, Ix2>,
@@ -30,10 +29,7 @@ pub trait SplitRule {
         I: Iterator<Item = usize>;
 }
 
-/// Continuous split rule.
-///
-/// Pick a pivot value and split depending on if the variable value is smaller or
-/// greater than the value picked.
+/// Continuous split rule: pick a pivot and split on < vs >=.
 #[derive(Clone, Copy, Debug)]
 pub struct ContinuousSplit;
 
@@ -45,9 +41,7 @@ impl SplitRule for ContinuousSplit {
         I: Iterator<Item = Self::Value>,
     {
         let mut candidates = candidates.peekable();
-        if candidates.peek().is_none() {
-            return None;
-        }
+        candidates.peek()?;
 
         let initial = candidates.next().unwrap();
         let (min_val, max_val) = candidates.fold((initial, initial), |(min, max), val| {
@@ -75,8 +69,7 @@ impl SplitRule for ContinuousSplit {
     }
 }
 
-/// Choose a single categorical value and branch on it if the variable value is
-/// that value or not.
+/// One-hot split rule: branch on equality with a single categorical value.
 #[derive(Clone, Copy, Debug)]
 pub struct OneHotSplit;
 
@@ -87,12 +80,6 @@ impl SplitRule for OneHotSplit {
     where
         I: Iterator<Item = Self::Value>,
     {
-        let mut candidates = candidates.peekable();
-        if candidates.peek().is_none() {
-            return None;
-        }
-
-        // Collect into a HashSet to get unique values efficiently.
         let unique_vals: Vec<i32> = candidates.collect::<HashSet<_>>().into_iter().collect();
 
         if unique_vals.len() <= 1 {
@@ -116,6 +103,7 @@ impl SplitRule for OneHotSplit {
     }
 }
 
+/// Enum for dynamic dispatch over split rules.
 #[derive(Clone, Debug)]
 pub enum SplitRules {
     Continuous(ContinuousSplit),
@@ -123,14 +111,14 @@ pub enum SplitRules {
 }
 
 impl SplitRules {
-    pub fn from_str(rule_name: &str) -> PyResult<Self> {
+    pub fn from_name(rule_name: &str) -> Result<Self, String> {
         match rule_name {
             "ContinuousSplit" => Ok(SplitRules::Continuous(ContinuousSplit)),
             "OneHotSplit" => Ok(SplitRules::OneHot(OneHotSplit)),
-            _ => Err(PyValueError::new_err(format!(
-                "Unknown split rule: '{}'. Supported split rules are 'ContinuousSplit' and 'OneHotSplit'.",
+            _ => Err(format!(
+                "Unknown split rule: '{}'. Supported: 'ContinuousSplit', 'OneHotSplit'.",
                 rule_name
-            ))),
+            )),
         }
     }
 

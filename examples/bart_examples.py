@@ -28,20 +28,20 @@ def test_propensity(args):
 
         t_pred = pm.Bernoulli("t_pred", p=p, observed=t_data, dims="obs")
 
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
-        # idata = pm.sample(
-        #     tune=args.tune,
-        #     draws=args.draws,
-        #     chains=4,
-        #     step=[
-        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #     ],
-        #     random_seed=RANDOM_SEED,
-        # )
-        #
-    sum_trees, stats = step.astep(1)
-    print(sum_trees, stats)
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=args.chains,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
+
+    # sum_trees, stats = step.astep(1)
+    # print(sum_trees, stats)
 
     # az.plot_forest(
     #     idata,
@@ -70,32 +70,34 @@ def test_bikes(args):
         mu = pmb.BART("mu", X, np.log(Y), m=args.trees)
         y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
 
-        # idata = pm.sample(
-        #     tune=args.tune,
-        #     draws=args.draws,
-        #     chains=4,
-        #     step=[
-        #         pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
-        #     ],
-        #     random_seed=RANDOM_SEED,
-        # )
+        idata = pm.sample(
+            tune=args.tune,
+            draws=args.draws,
+            chains=args.chains,
+            step=[
+                pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+            ],
+            random_seed=RANDOM_SEED,
+        )
 
-        step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
+        # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
     # print(idata["posterior"]["alpha"])
     # pmb.plot_convergence(idata, var_name="mu")
     # plt.show()
 
-    # az.plot_ppc(
-    #     data=posterior_predictive_oos_regression_train, kind="cumulative", observed_rug=True
-    # )
-    # plt.show()
+    az.plot_ppc(
+        data=posterior_predictive_oos_regression_train,
+        kind="cumulative",
+        observed_rug=True,
+    )
+    plt.show()
 
-    sum_trees, stats = step.astep(1)
-    print(stats)
+    # sum_trees, stats = step.astep(1)
+
     # for i in range(250):
-        # sum_trees, stats = step.astep(i)
-        # print(f"iter: {i}, time: {stats[0].get('time')}")
+    # sum_trees, stats = step.astep(i)
+    # print(f"iter: {i}, time: {stats[0].get('time')}")
 
 
 def test_coal(args):
@@ -116,12 +118,7 @@ def test_coal(args):
 
     with pm.Model() as model_coal:
         mu = pmb.BART(
-            "mu",
-            X=x_data,
-            Y=np.log(y_data),
-            alpha=0.95,
-            beta=2.0,
-            m=args.trees
+            "mu", X=x_data, Y=np.log(y_data), alpha=0.95, beta=2.0, m=args.trees
         )
         exp_mu = pm.Deterministic("exp_mu", pm.math.exp(mu))
         y_pred = pm.Poisson("y_pred", mu=exp_mu, observed=y_data)
@@ -129,7 +126,7 @@ def test_coal(args):
         idata = pm.sample(
             tune=args.tune,
             draws=args.draws,
-            chains=4,
+            chains=args.chains,
             step=[
                 pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
             ],
@@ -138,7 +135,6 @@ def test_coal(args):
         # step = pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
 
     # sum_trees, stats = step.astep(1)
-    # print(stats)
 
     # for i in range(500):
     #     sum_trees, stats = step.astep(i)
@@ -151,7 +147,14 @@ def test_coal(args):
     # ax.plot(x_centers, sum_trees)
     ax.plot(x_centers, y_data / 4, "k.")
     az.plot_hdi(x_centers, rates, smooth=False, color="grey")
-    az.plot_hdi(x_centers, rates, hdi_prob=0.5, smooth=False, plot_kwargs={"alpha": 0}, color="grey")
+    az.plot_hdi(
+        x_centers,
+        rates,
+        hdi_prob=0.5,
+        smooth=False,
+        plot_kwargs={"alpha": 0},
+        color="grey",
+    )
     ax.plot(coal, np.zeros_like(coal) - 0.5, "k|")
     ax.set_xlabel("years")
     ax.set_ylabel("rate")
@@ -177,7 +180,7 @@ def test_asymmetric_laplace(args):
         idata = pm.sample(
             tune=args.tune,
             draws=args.draws,
-            chains=4,
+            chains=args.chains,
             step=[
                 pmb.PGBART([mu], batch=tuple(args.batch), num_particles=args.particles)
             ],
@@ -206,5 +209,6 @@ if __name__ == "__main__":
     parser.add_argument("--tune", type=int, default=1000, help="Number of tuning steps")
     parser.add_argument("--draws", type=int, default=1000, help="Number of draws")
     parser.add_argument("--batch", nargs="+", default=(1.0, 1.0), type=float)
+    parser.add_argument("--chains", type=int, default=4, help="Number of chains")
     args = parser.parse_args()
     main(args)

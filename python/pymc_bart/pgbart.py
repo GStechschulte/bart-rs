@@ -144,37 +144,26 @@ class PGBART(ArrayStepShared):
         #     settings = PyBartSettings.Gp()
 
         max_depth = calculate_max_tree_depth(self.bart.alpha, self.bart.beta, probs_leaf=0.99)
-        max_nodes_per_tree = 2 ** (max_depth + 1) - 1
-        max_nodes_per_tree = 63
 
         split_rules = list(self.bart.split_rules.values())
 
-        print(f"X.shape: {self.X.shape}")
-        print(f"y.shape: {self.bart.Y.shape}")
-        print(f"init_leaf_value: {init_leaf_value}")
-        print(f"split_rules: {split_rules}")
-        print(f"response_rule: {self.bart.response}")
-        print(f"alpha vector: {self.alpha_vec}")
-        print(f"splitting probability: {splitting_probs}")
-        print(f"alpha: {self.bart.alpha}, beta: {self.bart.beta}")
-        print(f"self.leaf_sd: {self.leaf_sd}")
-        print(f"max_depth: {max_depth}")
-        print(f"max_nodes_per_tree: {max_nodes_per_tree}")
+        # Extract scalar sigma from leaf_sd array
+        sigma = float(self.leaf_sd.ravel()[0])
 
         # Build the Particle Gibbs sampler
         settings = PyBartSettings(
-            init_leaf_value=init_leaf_value,
-            init_leaf_std=self.leaf_sd,
             n_trees=self.bart.m,
             n_particles=num_particles,
-            max_nodes=max_nodes_per_tree,
+            max_depth=max_depth,
             alpha=self.bart.alpha,
             beta=self.bart.beta,
-            split_prior=splitting_probs,
+            sigma=sigma,
+            split_prior=splitting_probs.tolist(),
             split_rules=split_rules,
             response_rule=self.bart.response,
             resampling_rule="systematic",
-            batch_size=batch
+            batch_tune=batch[0],
+            batch_post=batch[1],
         )
 
         # INFO: Only at the end do we return the State structure back to Python to avoid
@@ -200,7 +189,7 @@ class PGBART(ArrayStepShared):
         t0 = perf_counter()
         self.compiled_pymc_model.update_shared_arrays()
     #     sum_trees, variable_inclusion = step(self.state, self.tune)
-        sum_trees = self.pg_bart.step()
+        sum_trees = self.pg_bart.step(self.tune)
         t1 = perf_counter()
 
         stats = {

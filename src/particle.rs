@@ -1,363 +1,244 @@
-use std::{collections::VecDeque, f64, rc::Rc, usize};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
-use numpy::ndarray::{Array, Ix1, Ix2};
+use numpy::ndarray::ArrayView2;
 
-use crate::update::{TreeContext, TreeProposal};
+use crate::tree::{TreeArrays, max_nodes_for_depth};
+use crate::update::TreeProposal;
 
-// A Particle is a shared pointer to a tree
-// pub type Particle<const MAX_NODES: usize> = Rc<Tree<MAX_NODES>>;
-
-#[derive(Debug)]
-pub struct Particle<const MAX_NODES: usize> {
-    pub tree: Rc<Tree<MAX_NODES>>,
-    pub expandable_nodes: Rc<VecDeque<usize>>,
+/// Flat CSR-style mapping from leaf node index to sample indices.
+///
+/// All sample indices live in one contiguous `data` Vec. Each leaf's samples
+/// occupy `data[node_start[i]..node_start[i] + node_len[i]]`. Splits partition
+/// the parent's slice in-place, so no per-split heap allocation is needed and
+/// cloning is a single memcpy instead of many small ones.
+#[derive(Clone, Debug)]
+pub struct LeafSamplesFlat {
+    /// Flat storage of sample indices. Layout is determined by `node_start`/`node_len`.
+    pub data: Vec<u32>,
+    /// Start offset in `data` for each node (0 for internal/unused nodes).
+    pub node_start: Vec<u32>,
+    /// Sample count for each node (0 for internal nodes after a split).
+    pub node_len: Vec<u32>,
 }
 
-impl<const MAX_NODES: usize> Particle<MAX_NODES> {
-    pub fn new(init_leaf_value: f64, n_samples: usize) -> Self {
-        Self {
-            tree: Rc::new(Tree::new(init_leaf_value, n_samples)),
-            expandable_nodes: Rc::new(VecDeque::from([0])), // Start with root
+impl LeafSamplesFlat {
+    pub fn new(n_samples: usize, max_depth: u8) -> Self {
+        let max_nodes = max_nodes_for_depth(max_depth);
+        let data: Vec<u32> = (0..n_samples as u32).collect();
+        let mut node_start = vec![0u32; max_nodes];
+        let mut node_len = vec![0u32; max_nodes];
+        node_start[0] = 0;
+        node_len[0] = n_samples as u32;
+        LeafSamplesFlat {
+            data,
+            node_start,
+            node_len,
         }
     }
 
-    pub fn new_reference(init_leaf_value: f64, n_samples: usize) -> Self {
+    #[inline]
+    pub fn samples(&self, node_idx: usize) -> &[u32] {
+        let start = self.node_start[node_idx] as usize;
+        let len = self.node_len[node_idx] as usize;
+        &self.data[start..start + len]
+    }
+}
+
+/// SMC particle with Arc-wrapped tree (copy-on-write) and flat sample mapping.
+///
+/// Cloning a particle during resampling is O(1) for the tree (Arc refcount
+/// increment) and a single flat memcpy for the sample map — no nested heap
+/// allocations. The tree is cloned on the heap only when `apply_mutation` is
+/// called and the Arc is actually shared.
+#[derive(Debug, Clone)]
+pub struct Particle {
+    pub tree: Arc<TreeArrays>,
+    pub expandable_nodes: VecDeque<u32>,
+    pub sample_map: LeafSamplesFlat,
+}
+
+impl Particle {
+    pub fn new(init_leaf_value: f64, n_samples: usize, max_depth: u8) -> Self {
+        let tree = Arc::new(TreeArrays::new(init_leaf_value, n_samples, max_depth));
         Self {
-            tree: Rc::new(Tree::new(init_leaf_value, n_samples)),
-            expandable_nodes: Rc::new(VecDeque::new()), // Reference particle - no growth
+            tree,
+            expandable_nodes: VecDeque::from([0]),
+            sample_map: LeafSamplesFlat::new(n_samples, max_depth),
         }
     }
 
-    /// Check if particle has expandable nodes (no COW)
+    pub fn new_reference(init_leaf_value: f64, n_samples: usize, max_depth: u8) -> Self {
+        let tree = Arc::new(TreeArrays::new(init_leaf_value, n_samples, max_depth));
+        Self {
+            tree,
+            expandable_nodes: VecDeque::new(),
+            sample_map: LeafSamplesFlat::new(n_samples, max_depth),
+        }
+    }
+
     pub fn has_expandable_nodes(&self) -> bool {
         !self.expandable_nodes.is_empty()
     }
 
-    /// Peek next expandable node (no COW)
-    pub fn peek_next_expandable(&self) -> Option<usize> {
+    pub fn peek_next_expandable(&self) -> Option<u32> {
         self.expandable_nodes.front().copied()
     }
 
-    /// Pop next expandable node (queue COW only - tree untouched!)
-    pub fn pop_next_expandable(&mut self) -> Option<usize> {
-        Rc::make_mut(&mut self.expandable_nodes).pop_front()
+    pub fn pop_next_expandable(&mut self) -> Option<u32> {
+        self.expandable_nodes.pop_front()
     }
 
-    /// Add new expandable nodes (queue COW only)
-    pub fn add_expandable_nodes(&mut self, nodes: &[usize]) {
-        let queue = Rc::make_mut(&mut self.expandable_nodes);
-        queue.extend(nodes.iter());
+    pub fn leaf_samples(&self, leaf_idx: usize) -> &[u32] {
+        self.sample_map.samples(leaf_idx)
     }
 
-    /// Get mutable tree reference (tree COW only)
-    pub fn tree_mut(&mut self) -> &mut Tree<MAX_NODES> {
-        Rc::make_mut(&mut self.tree)
-    }
+    /// Apply a mutation: COW-clone the tree if shared, split the node, and
+    /// partition the parent's sample slice in-place while simultaneously
+    /// updating `leaf_indices` — all in a single O(k) pass with zero heap
+    /// allocations.
+    pub fn apply_mutation(&mut self, proposal: &TreeProposal, x_data: ArrayView2<f64>) {
+        let node_idx = proposal.node_idx;
+        let split_var = proposal.split_var as usize;
+        let split_val = proposal.split_val;
+        let left_child = 2 * node_idx + 1;
+        let right_child = 2 * node_idx + 2;
+        let lc = left_child as u32;
+        let rc = right_child as u32;
 
-    /// Apply mutation that affects both tree and queue
-    pub fn apply_mutation(&mut self, proposal: &TreeProposal, context: &TreeContext) {
-        // Tree mutation (tree COW if needed)
-        let tree = self.tree_mut();
+        // COW: clones TreeArrays on the heap only when Arc is shared (refcount > 1).
+        let tree = Arc::make_mut(&mut self.tree);
         tree.split_node(
-            proposal.node_idx,
+            node_idx,
             proposal.split_var,
-            proposal.split_val,
+            split_val,
             proposal.left_value,
             proposal.right_value,
         );
 
-        tree.update_leaf_assignments(
-            proposal.node_idx,
-            proposal.split_var,
-            proposal.split_val,
-            &proposal.affected_samples,
-            &context.x_data,
-        );
+        let start = self.sample_map.node_start[node_idx] as usize;
+        let len = self.sample_map.node_len[node_idx] as usize;
+        let col = x_data.column(split_var);
 
-        // Queue update (queue COW if needed)
-        self.add_expandable_nodes(&[
-            2 * proposal.node_idx + 1, // Left child
-            2 * proposal.node_idx + 2, // Right child
-        ]);
-    }
-}
-
-impl<const MAX_NODES: usize> Clone for Particle<MAX_NODES> {
-    fn clone(&self) -> Self {
-        Self {
-            tree: Rc::clone(&self.tree),
-            expandable_nodes: Rc::new((*self.expandable_nodes).clone()),
-        }
-    }
-}
-
-pub type SplitVar = usize;
-pub type SplitVal = f64;
-pub type LeafVal = f64;
-pub type LeafIdx = usize;
-
-#[derive(Clone, Debug)]
-pub struct Tree<const MAX_NODES: usize> {
-    pub split_var: Vec<SplitVar>,
-    pub split_val: Vec<SplitVal>,
-    pub leaf_val: Vec<LeafVal>,
-    // pub leaf_indices: Vec<LeafIdx>,
-    // pub split_var: [SplitVar; MAX_NODES],
-    // pub split_val: [SplitVal; MAX_NODES],
-    // pub leaf_val: [LeafVal; MAX_NODES],
-    pub leaf_indices: Vec<LeafIdx>,
-    pub size: usize,
-}
-
-impl<const MAX_NODES: usize> Tree<MAX_NODES> {
-    /// Create a new tree with just a root leaf node
-    pub fn new(init_leaf_value: LeafVal, n_samples: usize) -> Self {
-        // let split_var = [usize::MAX; MAX_NODES];
-        // let split_val = [f64::NAN; MAX_NODES];
-        // let mut leaf_val = [0.0; MAX_NODES];
-
-        // // Set only root values
-        // leaf_val[0] = init_leaf_value;
-
-        // Self {
-        //     split_var,
-        //     split_val,
-        //     leaf_val,
-        //     leaf_indices: vec![0; n_samples],
-        //     size: 1,
-        // }
-
-        let mut split_var = Vec::with_capacity(MAX_NODES);
-        let mut split_val = Vec::with_capacity(MAX_NODES);
-        let mut leaf_val = Vec::with_capacity(MAX_NODES);
-        let leaf_indices = vec![0; n_samples]; // Initially, all samples belong to root node
-
-        // Initialize the root as a leaf
-        split_var.push(usize::MAX);
-        split_val.push(f64::NAN);
-        leaf_val.push(init_leaf_value);
-
-        Self {
-            split_var,
-            split_val,
-            leaf_val,
-            leaf_indices,
-            size: 1,
-        }
-    }
-
-    // Get the depth of a node in the binary tree
-    pub fn get_depth(&self, node_idx: usize) -> usize {
-        if node_idx == 0 {
-            0
-        } else {
-            1 + self.get_depth((node_idx - 1) / 2)
-        }
-    }
-
-    /// Check if a node is a leaf (no split variable assigned)
-    pub fn is_leaf(&self, node_idx: usize) -> bool {
-        node_idx < self.split_var.len() && self.split_var[node_idx] == usize::MAX
-    }
-
-    /// Get all leaf node indices
-    pub fn get_leaf_indices(&self) -> Vec<usize> {
-        (0..self.size).filter(|&i| self.is_leaf(i)).collect()
-    }
-
-    /// Calculate maximum depth from a node index in the tree
-    pub fn max_depth_from_node(node_idx: usize) -> usize {
-        if node_idx == 0 {
-            0
-        } else {
-            1 + Self::max_depth_from_node((node_idx - 1) / 2)
-        }
-    }
-
-    /// Calculate maximum allowable depth for this tree capacity
-    pub fn max_allowable_depth() -> usize {
-        let max_depth = ((MAX_NODES + 1) as f64).log2().floor() as usize;
-        max_depth.saturating_sub(1)
-    }
-
-    /// Get data (samples) indices for a leaf node.
-    pub fn get_leaf_samples(&self, leaf_idx: usize) -> impl Iterator<Item = usize> + '_ {
-        debug_assert!(self.is_leaf(leaf_idx), "Node {} is not a leaf", leaf_idx);
-
-        self.leaf_indices
-            .iter()
-            .enumerate()
-            .filter_map(move |(sample_idx, &assigned_leaf)| {
-                if assigned_leaf == leaf_idx {
-                    Some(sample_idx)
+        // In-place two-pointer partition: samples going left accumulate at the
+        // front, samples going right at the back. leaf_indices is updated in
+        // the same pass — no extra allocation needed.
+        let left_count = {
+            let slice = &mut self.sample_map.data[start..start + len];
+            let leaf_indices = &mut tree.leaf_indices;
+            let mut l = 0usize;
+            let mut r = len;
+            while l < r {
+                let s = slice[l];
+                let idx = s as usize;
+                // SAFETY: sample indices are in [0, n_samples); col and leaf_indices
+                // both have length n_samples by construction.
+                let v = unsafe { *col.uget(idx) };
+                if v < split_val {
+                    unsafe { *leaf_indices.get_unchecked_mut(idx) = lc }
+                    l += 1;
                 } else {
-                    None
-                }
-            })
-    }
-
-    /// Splits (converts) a leaf node into an internal node and adds two new children leaf nodes.
-    pub fn split_node(
-        &mut self,
-        leaf_idx: usize,
-        split_var: usize,
-        split_val: f64,
-        left_val: f64,
-        right_val: f64,
-    ) {
-        // Ensure we have space for two new children
-        let left_child = 2 * leaf_idx + 1;
-        let right_child = 2 * leaf_idx + 2;
-
-        // With constant generics, we know the capacity at compile time
-        assert!(
-            right_child < MAX_NODES,
-            "Tree mutation would exceed maximum capacity of {}",
-            MAX_NODES
-        );
-
-        // self.split_var[leaf_idx] = split_var;
-        // self.split_val[leaf_idx] = split_val;
-        // self.leaf_val[leaf_idx] = f64::NAN;
-
-        // self.split_var[left_child] = usize::MAX;
-        // self.split_val[left_child] = f64::NAN;
-        // self.leaf_val[left_child] = left_val;
-
-        // self.split_var[right_child] = usize::MAX;
-        // self.split_val[right_child] = f64::NAN;
-        // self.leaf_val[right_child] = right_val;
-
-        // self.size = self.size.max(right_child + 1);
-
-        // NOTE: Old implementation below
-        let required_size = right_child + 1;
-        while self.split_var.len() < required_size {
-            self.split_var.push(usize::MAX);
-            self.split_val.push(f64::NAN);
-            self.leaf_val.push(0.0);
-        }
-
-        self.split_var[leaf_idx] = split_var;
-        self.split_val[leaf_idx] = split_val;
-        self.leaf_val[leaf_idx] = f64::NAN; // Leaf node becomes an internal node
-
-        // Set the left child as a leaf at the calculated index
-        self.split_var[left_child] = usize::MAX;
-        self.split_val[left_child] = f64::NAN;
-        self.leaf_val[left_child] = left_val;
-
-        // Set the right child as a leaf at the calculated index
-        self.split_var[right_child] = usize::MAX;
-        self.split_val[right_child] = f64::NAN;
-        self.leaf_val[right_child] = right_val;
-
-        // // Left child
-        // self.split_var.push(usize::MAX);
-        // self.split_val.push(f64::MAX);
-        // self.leaf_val.push(left_val);
-
-        // // Right child
-        // self.split_var.push(usize::MAX);
-        // self.split_val.push(f64::MAX);
-        // self.leaf_val.push(right_val);
-
-        self.size = self.size.max(right_child + 1);
-    }
-
-    /// Updates leaf assignments with context after a split
-    ///
-    /// Updating of a Tree's `leaf_indices` occurs after a mutation (converting a leaf node to
-    /// and internal node) as the samples that belonged (fell in) to the parent leaf get
-    /// distributed to the two new child leaves.
-    pub fn update_leaf_assignments(
-        &mut self,
-        split_node_idx: usize,
-        split_var: usize,
-        split_val: f64,
-        affected_samples: &[usize],
-        x_data: &Array<f64, Ix2>,
-    ) {
-        let base_child = 2 * split_node_idx + 1; // Left child
-
-        // Update assignments for samples that were in the split node using bit manipulation
-        for &sample_idx in affected_samples {
-            let sample_val = x_data[[sample_idx, split_var]];
-            let child_offset = (sample_val >= split_val) as usize;
-            self.leaf_indices[sample_idx] = base_child + child_offset;
-        }
-    }
-
-    pub fn predict(&self, x: &[Vec<f64>]) -> Vec<f64> {
-        todo!("Not implemented")
-    }
-}
-
-/// Predict interface for computing predictions using an array-based binary decision tree.
-///
-/// A distinction is made between predicting on training and test data. When computing predictions
-/// on training data, the `leaf_indices` vector effectively serves as a lookup to determine the leaf
-/// value for this data sample. When computing predictions on test data (new unseen data), one needs
-/// to perform a tree traversal to compute which leaf node a data sample falls into.
-pub trait Predict {
-    fn predict_training_into(&self, out: &mut Array<f64, Ix1>);
-
-    fn predict_training(&self) -> Array<f64, Ix1>;
-    // fn predict_single_test(&self, data: &[f64]) -> f64;
-    // Computes predictions for two-dimensional data using the binary decision tree.
-    //
-    // Takes a two-dimensional design matrix and returns a one-dimensional array of predictions.
-    // For each leaf node in the tree, assigns that node's leaf value to all data samples that
-    // fall into that node.
-    fn predict_batch_test(&self, data: &Array<f64, Ix2>) -> Array<f64, Ix1>;
-}
-
-impl<const MAX_NODES: usize> Predict for Tree<MAX_NODES> {
-    fn predict_training_into(&self, out: &mut Array<f64, Ix1>) {
-        // Iterate and fill the buffer in-place. No allocations here.
-        for (i, &leaf_idx) in self.leaf_indices.iter().enumerate() {
-            out[i] = self.leaf_val[leaf_idx];
-        }
-    }
-
-    fn predict_training(&self) -> Array<f64, Ix1> {
-        self.leaf_indices
-            .iter()
-            .map(|&leaf_idx| self.leaf_val[leaf_idx])
-            .collect()
-    }
-
-    /// Predict on test data by traversing the tree
-    fn predict_batch_test(&self, data: &Array<f64, Ix2>) -> Array<f64, Ix1> {
-        let mut predictions = Array::zeros(data.nrows());
-
-        for (sample_idx, sample) in data.outer_iter().enumerate() {
-            let mut node_idx = 0;
-
-            // Traverse tree until we reach a leaf
-            while node_idx < self.size && !self.is_leaf(node_idx) {
-                let split_var = self.split_var[node_idx];
-                let split_val = self.split_val[node_idx];
-
-                // TODO: Update to arithmetic
-                if sample[split_var] < split_val {
-                    node_idx = 2 * node_idx + 1; // Left child
-                } else {
-                    node_idx = 2 * node_idx + 2; // Right child
-                }
-
-                // Safety check to prevent infinite loops
-                if node_idx >= MAX_NODES {
-                    break;
+                    unsafe { *leaf_indices.get_unchecked_mut(idx) = rc }
+                    r -= 1;
+                    slice.swap(l, r);
                 }
             }
+            l
+        };
 
-            // Assign leaf value
-            if node_idx < self.size && self.is_leaf(node_idx) {
-                predictions[sample_idx] = self.leaf_val[node_idx];
-            }
-        }
+        self.sample_map.node_start[left_child] = start as u32;
+        self.sample_map.node_len[left_child] = left_count as u32;
+        self.sample_map.node_start[right_child] = (start + left_count) as u32;
+        self.sample_map.node_len[right_child] = (len - left_count) as u32;
+        self.sample_map.node_len[node_idx] = 0;
 
-        predictions
+        self.expandable_nodes.push_back(left_child as u32);
+        self.expandable_nodes.push_back(right_child as u32);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use numpy::ndarray::Array2;
+
+    #[test]
+    fn test_leaf_samples_flat_new() {
+        let m = LeafSamplesFlat::new(5, 3);
+        assert_eq!(m.samples(0), &[0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_particle_clone_shares_arc() {
+        let p = Particle::new(0.0, 10, 3);
+        let q = p.clone();
+        assert!(Arc::ptr_eq(&p.tree, &q.tree));
+    }
+
+    #[test]
+    fn test_apply_mutation_partitions_correctly() {
+        // x: 5 samples, 1 feature: [0, 1, 2, 3, 4]
+        let x = Array2::from_shape_fn((5, 1), |(i, _)| i as f64);
+        let mut p = Particle::new(0.0, 5, 3);
+
+        let proposal = TreeProposal {
+            node_idx: 0,
+            split_var: 0,
+            split_val: 2.5,
+            left_value: -1.0,
+            right_value: 1.0,
+        };
+        p.apply_mutation(&proposal, x.view());
+
+        // Samples 0,1,2 go left (< 2.5); samples 3,4 go right.
+        let mut left: Vec<u32> = p.leaf_samples(1).to_vec();
+        let mut right: Vec<u32> = p.leaf_samples(2).to_vec();
+        left.sort_unstable();
+        right.sort_unstable();
+        assert_eq!(left, vec![0, 1, 2]);
+        assert_eq!(right, vec![3, 4]);
+
+        // leaf_indices updated correctly.
+        assert_eq!(p.tree.leaf_indices[0], 1);
+        assert_eq!(p.tree.leaf_indices[1], 1);
+        assert_eq!(p.tree.leaf_indices[2], 1);
+        assert_eq!(p.tree.leaf_indices[3], 2);
+        assert_eq!(p.tree.leaf_indices[4], 2);
+
+        // Arc is unique after mutation (was unique from new()).
+        assert_eq!(Arc::strong_count(&p.tree), 1);
+    }
+
+    #[test]
+    fn test_apply_mutation_cow_unshares_arc() {
+        let x = Array2::from_shape_fn((4, 1), |(i, _)| i as f64);
+        let p = Particle::new(0.0, 4, 3);
+        let mut q = p.clone();
+
+        // p and q share the same Arc before mutation.
+        assert!(Arc::ptr_eq(&p.tree, &q.tree));
+
+        let proposal = TreeProposal {
+            node_idx: 0,
+            split_var: 0,
+            split_val: 2.0,
+            left_value: -1.0,
+            right_value: 1.0,
+        };
+        q.apply_mutation(&proposal, x.view());
+
+        // After mutation q has its own tree; p's tree is unchanged.
+        assert!(!Arc::ptr_eq(&p.tree, &q.tree));
+        assert!(p.tree.is_leaf(0), "original particle tree should still be root-only");
+        assert!(!q.tree.is_leaf(0), "mutated particle tree should be split");
+    }
+
+    #[test]
+    fn test_flat_samples_all_in_data() {
+        let n = 8;
+        let m = LeafSamplesFlat::new(n, 3);
+        // All sample indices in data, summing to n*(n-1)/2.
+        let sum: u32 = m.data.iter().sum();
+        assert_eq!(sum, (n * (n - 1) / 2) as u32);
     }
 }

@@ -1,85 +1,37 @@
-use std::collections::VecDeque;
-use std::rc::Rc;
+use crate::tree::TreeArrays;
 
-use numpy::ndarray::{Array, Ix1};
-
-use crate::particle::Particle;
-
-#[derive(Debug)]
-pub struct Forest<const MAX_NODES: usize> {
-    pub particles: Vec<Particle<MAX_NODES>>,
-    pub weights: Vec<f64>,
-    pub predictions_buffer: Array<f64, Ix1>,
-    pub n_particles: usize,
+/// Simple ensemble of trees. No longer conflated with SMC particle management.
+#[derive(Clone, Debug)]
+pub struct Forest {
+    pub trees: Vec<TreeArrays>,
 }
 
-impl<const MAX_NODES: usize> Forest<MAX_NODES> {
-    pub fn new(n_particles: usize, n_samples: usize) -> Self {
+impl Forest {
+    pub fn new() -> Self {
+        Self { trees: Vec::new() }
+    }
+
+    pub fn with_capacity(n_trees: usize) -> Self {
         Self {
-            particles: Vec::with_capacity(n_particles),
-            weights: Vec::with_capacity(n_particles),
-            predictions_buffer: Array::zeros(n_samples),
-            n_particles,
+            trees: Vec::with_capacity(n_trees),
         }
     }
 
-    pub fn reset(&mut self, init_leaf_value: f64, n_samples: usize) {
-        self.particles.clear();
-
-        for i in 0..self.n_particles {
-            let particle = if i == 0 {
-                Particle::new_reference(init_leaf_value, n_samples)
-            } else {
-                Particle::new(init_leaf_value, n_samples)
-            };
-            self.particles.push(particle);
-        }
+    pub fn push(&mut self, tree: TreeArrays) {
+        self.trees.push(tree);
     }
 
-    pub fn has_expandable_particles(&self) -> bool {
-        self.particles.iter().any(|p| p.has_expandable_nodes())
+    pub fn len(&self) -> usize {
+        self.trees.len()
     }
 
-    /// Resampling now clones both Rc<Tree> and Rc<VecDeque> - but no actual data!
-    pub fn resample_particles(&mut self, ancestors: &[usize]) {
-        println!("Before resampling:");
-        for (i, particle) in self.particles.iter().enumerate() {
-            println!(
-                "  particle {}: tree count = {}, expandable_nodes: {:?}",
-                i,
-                Rc::strong_count(&particle.tree),
-                particle.expandable_nodes,
-            );
-        }
+    pub fn is_empty(&self) -> bool {
+        self.trees.is_empty()
+    }
+}
 
-        // Now create new particles from the ancestors
-        // The old_particles vector is the ONLY owner of the references
-        // let mut old_particles = std::mem::take(&mut self.particles);
-        // self.particles.clear();
-
-        // let mut new = Vec::with_capacity(ancestors.len());
-        // for &idx in ancestors.iter() {
-        // new.push(self.particles[idx].clone())
-        // }
-
-        // self.particles.clear();
-        // self.particles = new;
-
-        self.particles = ancestors
-            .iter()
-            .map(|&idx| self.particles[idx].clone())
-            .collect();
-
-        // old_particles.clear();
-
-        println!("After resampling:");
-        for (i, particle) in self.particles.iter().enumerate() {
-            println!(
-                "  new particle {}: tree count = {}, expandable_nodes: {:?}",
-                i,
-                Rc::strong_count(&particle.tree),
-                particle.expandable_nodes
-            );
-        }
+impl Default for Forest {
+    fn default() -> Self {
+        Self::new()
     }
 }

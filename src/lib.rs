@@ -1,93 +1,113 @@
 use std::ffi::c_double;
 
-pub mod base;
-pub mod builder;
+pub mod config;
+pub mod data;
 pub mod forest;
+pub mod kernel;
 pub mod particle;
 pub mod resampling;
 pub mod response;
-pub mod sampler;
+pub mod smc;
 pub mod splitting;
+pub mod state;
+pub mod tree;
 pub mod update;
+pub mod weight;
 
-use crate::builder::{BartSampler, BartSamplerBuilder};
-use crate::response::ResponseStrategies;
-use crate::splitting::SplitRules;
-use crate::update::TreeContext;
+use crate::config::BartConfig;
+use crate::data::OwnedData;
+use crate::kernel::{BartKernel, ErasedKernel, SamplingAlgorithm};
+use crate::resampling::SystematicResampling;
+use crate::splitting::{ContinuousSplit, SplitRules};
+use crate::weight::PyMCWeightFn;
 
 use numpy::{
     PyArray1, PyReadonlyArray,
-    ndarray::{Ix1, Ix2},
+    ndarray::{Array1, Ix1, Ix2},
 };
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 
-pub type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
+type LogpFunc = unsafe extern "C" fn(*const f64, usize) -> c_double;
 
 #[pyclass]
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct PyBartSettings {
-    init_leaf_value: f64,
-    init_leaf_std: f64,
     n_trees: usize,
     n_particles: usize,
-    max_nodes: usize,
+    max_depth: u8,
     alpha: f64,
     beta: f64,
+    sigma: f64,
     split_prior: Vec<f64>,
-    /// Key-value pair indicating the split rule for each dimension of the design matrix.
-    split_rules: Vec<SplitRules>,
-    response_rule: ResponseStrategies,
+    split_rules: Vec<String>,
+    response_rule: String,
     resampling_rule: String,
-    batch_size: (f64, f64),
+    batch_tune: f64,
+    batch_post: f64,
+    seed: u64,
 }
 
 #[pymethods]
 impl PyBartSettings {
     #[new]
+    #[pyo3(signature = (
+        n_trees,
+        n_particles,
+        max_depth,
+        alpha,
+        beta,
+        sigma,
+        split_prior,
+        split_rules,
+        response_rule,
+        resampling_rule,
+        batch_tune = 0.1,
+        batch_post = 0.1,
+        seed = 0
+    ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
-        init_leaf_value: f64,
-        init_leaf_std: f64,
         n_trees: usize,
         n_particles: usize,
-        max_nodes: usize,
+        max_depth: u8,
         alpha: f64,
         beta: f64,
+        sigma: f64,
         split_prior: Vec<f64>,
         split_rules: Vec<String>,
         response_rule: String,
         resampling_rule: String,
-        batch_size: (f64, f64),
-    ) -> PyResult<Self> {
-        let split_rules: Vec<SplitRules> = split_rules
-            .iter()
-            .map(|rule| SplitRules::from_str(rule))
-            .collect::<PyResult<Vec<SplitRules>>>()?;
-
-        let response_rule = ResponseStrategies::from_str(response_rule.as_str())?;
-
-        Ok(Self {
-            init_leaf_value,
-            init_leaf_std,
+        batch_tune: f64,
+        batch_post: f64,
+        seed: u64,
+    ) -> Self {
+        Self {
             n_trees,
             n_particles,
-            max_nodes,
+            max_depth,
             alpha,
             beta,
+            sigma,
             split_prior,
             split_rules,
             response_rule,
             resampling_rule,
-            batch_size,
-        })
+            batch_tune,
+            batch_post,
+            seed,
+        }
     }
 }
 
 #[pyclass(unsendable)]
 struct PySampler {
-    sampler: BartSampler,
-    context: TreeContext,
+    kernel: Box<dyn ErasedKernel>,
+    state: Option<crate::state::BartState>,
+    rng: SmallRng,
 }
 
 #[pymethods]
@@ -103,44 +123,82 @@ impl PySampler {
         let y_data = y.as_array().to_owned();
 
         let logp_func: LogpFunc = unsafe { std::mem::transmute(model as *const ()) };
+        let weight_fn = unsafe { PyMCWeightFn::from_raw(logp_func) };
 
-        let sampler = BartSamplerBuilder::new()
-            .with_max_nodes(settings.max_nodes)
-            .with_n_particles(settings.n_particles)
-            .with_n_trees(settings.n_trees)
-            .with_init_leaf_value(settings.init_leaf_value)
-            .with_split_strategies(settings.split_rules)
-            .with_response_strategy(settings.response_rule)
-            .with_bart_params(settings.alpha, settings.beta, 1.0)
-            .build(&x_data, &y_data, logp_func)?;
+        // Parse split rules
+        let split_rules: Vec<SplitRules> = settings
+            .split_rules
+            .iter()
+            .map(|rule| SplitRules::from_name(rule).map_err(PyValueError::new_err))
+            .collect::<PyResult<Vec<SplitRules>>>()?;
 
-        // TODO: mutable state should not really be in the TreeContext???
-        let context = TreeContext {
-            x_data: x_data,
-            y_data: y_data,
-            alpha: settings.alpha,
-            beta: settings.beta,
-            sigma: settings.init_leaf_std,
-            n_trees: settings.n_trees,
-            splitting_probs: Some(settings.split_prior.into()),
-            min_samples_leaf: 2,
-            max_nodes: settings.max_nodes,
+        // Fill with continuous splits if not enough rules provided
+        let n_features = x_data.ncols();
+        let split_rules = if split_rules.len() < n_features {
+            let mut rules = split_rules;
+            rules.resize(n_features, SplitRules::Continuous(ContinuousSplit));
+            rules
+        } else {
+            split_rules
         };
 
-        Ok(PySampler { sampler, context })
+        let config = BartConfig {
+            n_trees: settings.n_trees,
+            n_particles: settings.n_particles,
+            max_depth: settings.max_depth,
+            alpha: settings.alpha,
+            beta: settings.beta,
+            sigma: settings.sigma,
+            min_samples_leaf: 2,
+            splitting_probs: if settings.split_prior.is_empty() {
+                None
+            } else {
+                Some(Array1::from_vec(settings.split_prior))
+            },
+            batch_tune: settings.batch_tune,
+            batch_post: settings.batch_post,
+        };
+
+        let data = OwnedData::new(x_data, y_data);
+
+        let kernel = BartKernel {
+            split_rules,
+            resampling: SystematicResampling,
+            weight_fn,
+            config,
+            data,
+        };
+
+        let mut rng = SmallRng::seed_from_u64(settings.seed);
+        let state = SamplingAlgorithm::init(&kernel, &mut rng);
+
+        Ok(PySampler {
+            kernel: Box::new(kernel),
+            state: Some(state),
+            rng,
+        })
     }
 
-    fn step<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyArray1<f64>>> {
-        let seed = 42;
-        let mut rng = SmallRng::seed_from_u64(seed);
-        // TODO: Add a predictions buffer to avoid repeated allocations
-        let py_ensemble_predictions = self.sampler.step(&mut rng, &self.context);
-        Ok(PyArray1::from_slice(
-            py,
-            py_ensemble_predictions.as_slice().unwrap(),
-        ))
-        // let vec_ensemble_predictions = py_ensemble_predictions.to_vec();
-        // Ok(PyArray1::from_vec(py, vec_ensemble_predictions))
+    #[pyo3(signature = (tune = None))]
+    fn step<'py>(
+        &mut self,
+        py: Python<'py>,
+        tune: Option<bool>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let mut state = self
+            .state
+            .take()
+            .ok_or_else(|| PyValueError::new_err("Sampler state is missing (internal error)"))?;
+
+        if let Some(t) = tune {
+            state.tune = t;
+        }
+
+        let (new_state, _info) = self.kernel.step(&mut self.rng, state);
+
+        let result = PyArray1::from_slice(py, new_state.predictions.as_slice().unwrap());
+        self.state = Some(new_state);
+        Ok(result)
     }
 }
 

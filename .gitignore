@@ -70,3 +70,7 @@ docs/_build/
 
 # Pyenv
 .python-version
+
+# Benchmark environments and results
+.venv-bench-*/
+bench_results/

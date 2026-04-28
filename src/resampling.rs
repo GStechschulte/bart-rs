@@ -1,46 +1,34 @@
 //! Resampling strategies for particle filtering in BART.
-//!
-//! This module provides different resampling methods for selecting particles
-//! based on their normalized weights.
 use rand::Rng;
 
-use pyo3::PyResult;
-use pyo3::exceptions::PyValueError;
-
-/// Resampling interface for implementing different resampling methods
+/// Resampling interface for implementing different resampling methods.
 pub trait ResamplingStrategy {
-    /// Resample particle indices based on their normalized weights
-    // fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
-    fn resample<R>(rng: &mut R, weights: &[f64]) -> Vec<usize>
-    where
-        R: Rng;
-    // I: Iterator<Item = f64>;
+    /// Resample into a pre-allocated buffer, avoiding allocation.
+    fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>);
+
+    /// Convenience wrapper that allocates a new Vec.
+    fn resample(&self, rng: &mut impl Rng, weights: &[f64]) -> Vec<usize> {
+        let mut out = Vec::with_capacity(weights.len());
+        self.resample_into(rng, weights, &mut out);
+        out
+    }
 }
 
-/// Systematic resampling strategy
+/// Systematic resampling strategy.
 ///
-/// Builds a cumulative distribution function (CDF) and samples a single random offset
-/// `u` to determine which bin (interval) each particle `u_i` lands in. Provides
-/// a lower variance than multinomial resampling and is the preferred method for most
-/// applications.
+/// Builds a CDF and samples a single random offset to determine which bin
+/// each particle lands in. Provides lower variance than multinomial resampling.
 #[derive(Clone, Copy, Debug)]
 pub struct SystematicResampling;
 
 impl ResamplingStrategy for SystematicResampling {
-    // fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
-    fn resample<R>(rng: &mut R, weights: &[f64]) -> Vec<usize>
-    where
-        R: Rng,
-        // I: Iterator<Item = f64>,
-    {
-        // let weights_vec: Vec<f64> = weights.collect();
-        println!("normalized weights: {:?}", weights);
+    fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
         let n = weights.len();
         let u = rng.random::<f64>();
 
         let mut current_idx = 0usize;
         let mut current_cum = 0.0f64;
-        let mut ancestors = Vec::with_capacity(n);
+        out.clear();
 
         for i in 0..n {
             let target = (i as f64 + u) / n as f64;
@@ -51,65 +39,70 @@ impl ResamplingStrategy for SystematicResampling {
             }
 
             let ancestor = if current_idx == 0 { 0 } else { current_idx - 1 };
-            ancestors.push(ancestor);
+            out.push(ancestor);
         }
-
-        ancestors
-        // let weights_vec: Vec<f64> = weights.collect();
-        // println!("normalized weights: {:?}", weights_vec);
-        // let n = weights_vec.len();
-        // let u = rng.random::<f64>(); // Random offset between 0 and 1
-
-        // let mut current_idx = 0usize;
-        // let mut current_cum = 0.0f64;
-
-        // (0..n).map(move |i| {
-        //     let target = (i as f64 + u) / n as f64;
-        //     while current_cum < target && current_idx < n {
-        //         current_cum += weights_vec[current_idx];
-        //         current_idx += 1;
-        //     }
-        //     // If we've reached the end, clamp to the last index
-        //     if current_idx == 0 { 0 } else { current_idx - 1 }
-        // })
     }
 }
 
-/// Multinomial resampling strategy
+/// Multinomial resampling strategy.
 ///
 /// Standard multinomial resampling where each particle is independently
-/// sampled according to its weight. Has higher variance than systematic resampling.
+/// sampled according to its weight.
 #[derive(Clone, Copy, Debug)]
 pub struct MultinomialResampling;
 
-// impl ResamplingStrategy for MultinomialResampling {
-//     fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
-//     where
-//         R: Rng,
-//         I: Iterator<Item = f64>,
-//     {
-//         todo!("Not implemented")
-//     }
-// }
+impl ResamplingStrategy for MultinomialResampling {
+    fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
+        let n = weights.len();
+        out.clear();
 
-/// Stratified resampling strategy
+        // Build CDF (reuses allocation if called repeatedly via resample() wrapper,
+        // but this internal vec is unavoidable without changing the trait further)
+        let mut cdf = Vec::with_capacity(n);
+        let mut cumsum = 0.0;
+        for &w in weights {
+            cumsum += w;
+            cdf.push(cumsum);
+        }
+
+        for _ in 0..n {
+            let u: f64 = rng.random();
+            let idx = cdf.partition_point(|&c| c < u).min(n - 1);
+            out.push(idx);
+        }
+    }
+}
+
+/// Stratified resampling strategy.
 ///
-/// Similar to systematic resampling but uses independent random numbers
-/// for each stratum, providing a middle ground between systematic and multinomial.
+/// Uses independent random numbers for each stratum, providing a middle
+/// ground between systematic and multinomial.
 #[derive(Clone, Copy, Debug)]
 pub struct StratifiedResampling;
 
-// impl ResamplingStrategy for StratifiedResampling {
-//     fn resample<R, I>(rng: &mut R, weights: I) -> impl Iterator<Item = usize>
-//     where
-//         R: Rng,
-//         I: Iterator<Item = f64>,
-//     {
-//         todo!("Not implemented")
-//     }
-// }
+impl ResamplingStrategy for StratifiedResampling {
+    fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
+        let n = weights.len();
+        let mut current_idx = 0usize;
+        let mut current_cum = 0.0f64;
+        out.clear();
 
-/// Enum for dynamic dispatch over resampling strategies
+        for i in 0..n {
+            let u: f64 = rng.random();
+            let target = (i as f64 + u) / n as f64;
+
+            while current_cum < target && current_idx < n {
+                current_cum += weights[current_idx];
+                current_idx += 1;
+            }
+
+            let ancestor = if current_idx == 0 { 0 } else { current_idx - 1 };
+            out.push(ancestor);
+        }
+    }
+}
+
+/// Enum for dynamic dispatch over resampling strategies.
 #[derive(Clone, Copy, Debug)]
 pub enum ResamplingStrategies {
     Systematic(SystematicResampling),
@@ -118,13 +111,22 @@ pub enum ResamplingStrategies {
 }
 
 impl ResamplingStrategies {
-    pub fn from_str(name: &str) -> PyResult<Self> {
+    pub fn from_name(name: &str) -> Result<Self, String> {
         match name.to_lowercase().as_str() {
             "systematic" => Ok(ResamplingStrategies::Systematic(SystematicResampling)),
-            _ => Err(PyValueError::new_err(format!(
-                "Unknown resampling strategy: '{}'",
-                name
-            ))),
+            "multinomial" => Ok(ResamplingStrategies::Multinomial(MultinomialResampling)),
+            "stratified" => Ok(ResamplingStrategies::Stratified(StratifiedResampling)),
+            _ => Err(format!("Unknown resampling strategy: '{}'", name)),
+        }
+    }
+}
+
+impl ResamplingStrategy for ResamplingStrategies {
+    fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
+        match self {
+            ResamplingStrategies::Systematic(s) => s.resample_into(rng, weights, out),
+            ResamplingStrategies::Multinomial(s) => s.resample_into(rng, weights, out),
+            ResamplingStrategies::Stratified(s) => s.resample_into(rng, weights, out),
         }
     }
 }
