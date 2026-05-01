@@ -9,9 +9,7 @@ use crate::update::TreeProposal;
 /// Flat CSR-style mapping from leaf node index to sample indices.
 ///
 /// All sample indices live in one contiguous `data` Vec. Each leaf's samples
-/// occupy `data[node_start[i]..node_start[i] + node_len[i]]`. Splits partition
-/// the parent's slice in-place, so no per-split heap allocation is needed and
-/// cloning is a single memcpy instead of many small ones.
+/// occupy `data[node_start[i]..node_start[i] + node_len[i]]`.
 #[derive(Clone, Debug)]
 pub struct LeafSamplesFlat {
     /// Flat storage of sample indices. Layout is determined by `node_start`/`node_len`.
@@ -45,12 +43,6 @@ impl LeafSamplesFlat {
     }
 }
 
-/// SMC particle with Arc-wrapped tree (copy-on-write) and flat sample mapping.
-///
-/// Cloning a particle during resampling is O(1) for the tree (Arc refcount
-/// increment) and a single flat memcpy for the sample map — no nested heap
-/// allocations. The tree is cloned on the heap only when `apply_mutation` is
-/// called and the Arc is actually shared.
 #[derive(Debug, Clone)]
 pub struct Particle {
     pub tree: Arc<TreeArrays>,
@@ -93,10 +85,9 @@ impl Particle {
         self.sample_map.samples(leaf_idx)
     }
 
-    /// Apply a mutation: COW-clone the tree if shared, split the node, and
+    /// Apply a mutation is a COW-clone if shared, split the node, and
     /// partition the parent's sample slice in-place while simultaneously
-    /// updating `leaf_indices` — all in a single O(k) pass with zero heap
-    /// allocations.
+    /// updating `leaf_indices`.
     pub fn apply_mutation(&mut self, proposal: &TreeProposal, x_data: ArrayView2<f64>) {
         let node_idx = proposal.node_idx;
         let split_var = proposal.split_var as usize;
@@ -106,7 +97,7 @@ impl Particle {
         let lc = left_child as u32;
         let rc = right_child as u32;
 
-        // COW: clones TreeArrays on the heap only when Arc is shared (refcount > 1).
+        // COW clones TreeArrays on the heap only when Arc is shared (refcount > 1).
         let tree = Arc::make_mut(&mut self.tree);
         tree.split_node(
             node_idx,
@@ -229,7 +220,10 @@ mod tests {
 
         // After mutation q has its own tree; p's tree is unchanged.
         assert!(!Arc::ptr_eq(&p.tree, &q.tree));
-        assert!(p.tree.is_leaf(0), "original particle tree should still be root-only");
+        assert!(
+            p.tree.is_leaf(0),
+            "original particle tree should still be root-only"
+        );
         assert!(!q.tree.is_leaf(0), "mutated particle tree should be split");
     }
 

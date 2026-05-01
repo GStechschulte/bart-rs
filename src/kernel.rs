@@ -11,7 +11,6 @@ use crate::state::{BartInfo, BartState};
 use crate::tree::TreeArrays;
 use crate::weight::WeightFn;
 
-/// BlackJAX-style sampling algorithm trait.
 pub trait SamplingAlgorithm {
     type State;
     type Info;
@@ -20,7 +19,6 @@ pub trait SamplingAlgorithm {
     fn step(&self, rng: &mut impl Rng, state: Self::State) -> (Self::State, Self::Info);
 }
 
-/// Concrete BART kernel parameterized by strategy types.
 pub struct BartKernel<R, W> {
     pub split_rules: Vec<SplitRules>,
     pub resampling: R,
@@ -83,7 +81,7 @@ where
         for k in 0..batch_size {
             let tree_idx = (state.next_tree_idx + k) % n_trees;
 
-            // residuals = sum of all OTHER trees = predictions - old_tree.predict()
+            // Residuals = sum of all OTHER trees = predictions - old_tree.predict()
             state.forest[tree_idx].predict_training_into(&mut tree_pred_buf);
             residuals_buf.assign(&state.predictions);
             residuals_buf -= &tree_pred_buf;

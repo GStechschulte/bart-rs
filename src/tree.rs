@@ -1,6 +1,6 @@
 use numpy::ndarray::{Array, ArrayView2, Ix1, Ix2};
 
-/// Bartz-style heap-indexed tree with separate internal/leaf arrays.
+/// Heap-indexed tree with separate internal/leaf arrays.
 ///
 /// Uses heap convention: root=0, left=2i+1, right=2i+2.
 /// Internal nodes store split variable and threshold. Leaf nodes store
