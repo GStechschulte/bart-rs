@@ -42,6 +42,10 @@ codegen-units = 1
 lto = true
 opt-level = 3
 
+[[bin]]
+name = "profile_sampler"
+path = "src/bin/profile_sampler.rs"
+
 [[bench]]
 name = "particle_gibbs"
 harness = false

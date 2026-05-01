@@ -17,9 +17,24 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
+import pandas as pd
 import pymc as pm
 import pymc_bart as pmb
 from pymc_bart.pgbart import PGBART
+
+
+def build_bikes_model(n_trees: int, n_particles: int):
+    bikes = pd.read_csv(pm.get_data("bikes.csv"))
+
+    X = bikes[["hour", "temperature", "humidity", "workingday"]]
+    Y = bikes["count"]
+
+    with pm.Model():
+        alpha = pm.Exponential("alpha", 1.0)
+        mu = pmb.BART("mu", X, np.log(Y), m=n_trees)
+        y = pm.NegativeBinomial("y", mu=pm.math.exp(mu), alpha=alpha, observed=Y)
+        step = PGBART([mu], num_particles=n_particles)
+    return step
 
 
 def build_coal_model(n_trees: int, n_particles: int) -> PGBART:
@@ -32,15 +47,13 @@ def build_coal_model(n_trees: int, n_particles: int) -> PGBART:
     y_data = hist.astype("float64")
 
     with pm.Model():
-        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data),
-                       alpha=0.95, beta=2.0, m=n_trees)
+        mu = pmb.BART("mu", X=x_data, Y=np.log(y_data), alpha=0.95, beta=2.0, m=n_trees)
         pm.Poisson("y_pred", mu=pm.math.exp(mu), observed=y_data)
         step = PGBART([mu], num_particles=n_particles)
     return step
 
 
 def build_propensity_model(n_trees: int, n_particles: int) -> PGBART:
-    import pandas as pd
 
     nhefs_df = pd.read_csv(pm.get_data("nhefs.csv"))
     X = nhefs_df.astype("float64").copy()
@@ -56,6 +69,7 @@ def build_propensity_model(n_trees: int, n_particles: int) -> PGBART:
 
 
 BUILDERS = {
+    "bike": build_bikes_model,
     "coal": build_coal_model,
     "propensity": build_propensity_model,
 }

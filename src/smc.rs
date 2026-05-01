@@ -253,7 +253,7 @@ fn sample_feature_from_probs(rng: &mut impl Rng, probs: &[f64]) -> usize {
     probs.len() - 1
 }
 
-/// Normalize log-weights in-place using log-sum-exp for numerical stability.
+/// Normalize log-weights in-place using log-sum-exp trick.
 pub fn normalize_weights_inplace(weights: &mut [f64]) {
     let max_log_weight = weights.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 

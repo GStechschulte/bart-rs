@@ -6,7 +6,7 @@ use numpy::ndarray::ArrayView2;
 use crate::tree::{TreeArrays, max_nodes_for_depth};
 use crate::update::TreeProposal;
 
-/// Flat CSR-style mapping from leaf node index to sample indices.
+/// CSR-style mapping from leaf node index to sample indices.
 ///
 /// All sample indices live in one contiguous `data` Vec. Each leaf's samples
 /// occupy `data[node_start[i]..node_start[i] + node_len[i]]`.

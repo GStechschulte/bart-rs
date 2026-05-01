@@ -25,11 +25,10 @@ impl ResamplingStrategy for SystematicResampling {
     fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
         let n = weights.len();
         let u = rng.random::<f64>();
-
         let mut current_idx = 0usize;
         let mut current_cum = 0.0f64;
-        out.clear();
 
+        out.clear();
         for i in 0..n {
             let target = (i as f64 + u) / n as f64;
 
@@ -54,10 +53,6 @@ pub struct MultinomialResampling;
 impl ResamplingStrategy for MultinomialResampling {
     fn resample_into(&self, rng: &mut impl Rng, weights: &[f64], out: &mut Vec<usize>) {
         let n = weights.len();
-        out.clear();
-
-        // Build CDF (reuses allocation if called repeatedly via resample() wrapper,
-        // but this internal vec is unavoidable without changing the trait further)
         let mut cdf = Vec::with_capacity(n);
         let mut cumsum = 0.0;
         for &w in weights {
@@ -65,6 +60,7 @@ impl ResamplingStrategy for MultinomialResampling {
             cdf.push(cumsum);
         }
 
+        out.clear();
         for _ in 0..n {
             let u: f64 = rng.random();
             let idx = cdf.partition_point(|&c| c < u).min(n - 1);
