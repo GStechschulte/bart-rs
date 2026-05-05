@@ -422,6 +422,7 @@ dependencies = [
 name = "pymc-bart"
 version = "0.2.0"
 dependencies = [
+ "bumpalo",
  "criterion",
  "numpy",
  "pyo3",

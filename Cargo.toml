@@ -19,13 +19,15 @@ edition = "2024"
 
 [lib]
 name = "pymc_bart"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
+# crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { version = "0.25.1", features = ["macros"] }
 numpy = { version = "0.25.0" }
 rand = { version = "0.9.1" }
 rand_distr = { version = "0.5.0" }
+bumpalo = { version = "3", features = ["collections"] }
 
 [dev-dependencies]
 criterion = { version = "0.6.0", features = ["html_reports"] }
@@ -39,8 +41,12 @@ pyo3-build-config = "0.25.1"
 [profile.release]
 debug = true
 codegen-units = 1
-lto = true
+lto = "fat"
 opt-level = 3
+panic = "abort"
+
+[build]
+rustflags = ["-C", "target-cpu=native"]
 
 [[bin]]
 name = "profile_sampler"
@@ -51,7 +57,5 @@ name = "particle_gibbs"
 harness = false
 
 [profile.bench]
-debug = true
-opt-level = 3
-lto = true
-codegen-units = 1
+inherits = "release"
+lto = "thin"
