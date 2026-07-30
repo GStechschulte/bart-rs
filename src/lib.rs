@@ -23,7 +23,7 @@ use crate::weight::PyMCWeightFn;
 
 use numpy::{
     PyArray1, PyReadonlyArray,
-    ndarray::{Array1, Ix1, Ix2},
+    ndarray::{Array, Array1, Ix1, Ix2, ShapeBuilder},
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -119,7 +119,12 @@ impl PySampler {
         model: usize,
         settings: PyBartSettings,
     ) -> PyResult<PySampler> {
-        let x_data = x.as_array().to_owned();
+        // Force column-major (Fortran) layout so that `column(j)` views are
+        // contiguous in memory, giving stride-1 access in the partition loop.
+        let x_arr = x.as_array();
+        let x_data =
+            Array::from_shape_vec(x_arr.raw_dim().f(), x_arr.t().iter().cloned().collect())
+                .expect("x shape/data length mismatch");
         let y_data = y.as_array().to_owned();
 
         let logp_func: LogpFunc = unsafe { std::mem::transmute(model as *const ()) };
